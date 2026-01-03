@@ -1,24 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Header from "@/components/layout/Header";
 import Sidebar from "@/components/layout/Sidebar";
 import PriceChart from "@/components/trading/PriceChart";
-import BettingGrid from "@/components/trading/BettingGrid";
+import BettingGrid, { GridCell } from "@/components/trading/BettingGrid";
+import { QuickBetChips } from "@/components/trading/BetChip";
+import WinAnimation, { useWinAnimation } from "@/components/trading/WinAnimation";
+import { ToastProvider, useToast } from "@/components/ui/Toast";
+import Balance from "@/components/ui/Balance";
+import { useBets } from "@/hooks/useBets";
 import { MessageCircle, X } from "lucide-react";
 
-export default function TradingPage() {
+// Main content component that uses toast context
+function TradingContent() {
   const [activeNavItem, setActiveNavItem] = useState("trade");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedBetAmount, setSelectedBetAmount] = useState(5);
+  const [currentPrice] = useState(97500);
 
-  const handleCellClick = (cell: { id: string; multiplier: number; priceLevel: number }) => {
-    console.log("Cell clicked:", cell);
-    // This will be expanded in Sprint 2 for bet placement
-  };
+  // Toast notifications
+  const { showWin, showLoss } = useToast();
+
+  // Win animation
+  const winAnimation = useWinAnimation();
+
+  // Bet management
+  const {
+    bets,
+    activeBets,
+    balance,
+    totalPotentialWin,
+    placeBet,
+  } = useBets({
+    initialBalance: 2566.52,
+    onWin: (bet, payout) => {
+      // Trigger win animation at center of screen
+      winAnimation.triggerWin({ x: 50, y: 50 }, payout);
+      // Show toast notification
+      showWin(payout, `Your ${bet.multiplier.toFixed(1)}x bet paid off!`);
+    },
+    onLoss: (bet) => {
+      showLoss(bet.amount, "Price didn't reach your target.");
+    },
+    mockResolution: true,
+  });
+
+  // Handle grid cell click to place bet
+  const handleCellClick = useCallback(
+    (cell: GridCell) => {
+      const targetTime = Date.now() + cell.timeOffset * 1000;
+
+      const bet = placeBet(
+        selectedBetAmount,
+        cell.priceLevel,
+        targetTime,
+        cell.multiplier,
+        cell.id
+      );
+
+      if (!bet) {
+        // Could show an error toast here
+        console.log("Failed to place bet - insufficient balance");
+      }
+    },
+    [selectedBetAmount, placeBet]
+  );
 
   return (
     <div className="min-h-screen bg-pulse-gradient">
+      {/* Win Animation Overlay */}
+      <WinAnimation
+        isActive={winAnimation.isActive}
+        position={winAnimation.position}
+        winAmount={winAnimation.winAmount}
+        onComplete={winAnimation.resetAnimation}
+      />
+
       {/* Header */}
       <Header onSettingsClick={() => setShowSettings(true)} />
 
@@ -33,6 +92,21 @@ export default function TradingPage() {
         <div className="h-[calc(100vh-3.5rem)] flex">
           {/* Trading view area */}
           <div className="flex-1 p-4 flex flex-col">
+            {/* Top bar with balance */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <Balance amount={balance} size="md" />
+                <div className="text-sm text-pulse-text-secondary">
+                  Active: <span className="text-white font-semibold">{activeBets.length}</span>
+                </div>
+              </div>
+              <div className="text-sm text-pulse-text-secondary">
+                Potential: <span className="text-pulse-yellow font-semibold">
+                  ${totalPotentialWin.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
             {/* Chart and grid container */}
             <div className="flex-1 relative rounded-xl overflow-hidden border border-pulse-pink/10 bg-pulse-bg-secondary/30 backdrop-blur-sm">
               {/* Price Chart */}
@@ -43,10 +117,12 @@ export default function TradingPage() {
               {/* Betting Grid Overlay */}
               <div className="absolute inset-0 pointer-events-auto">
                 <BettingGrid
-                  currentPrice={97500}
+                  currentPrice={currentPrice}
                   rows={8}
-                  cols={6}
+                  cols={5}
                   onCellClick={handleCellClick}
+                  bets={bets}
+                  selectedAmount={selectedBetAmount}
                 />
               </div>
             </div>
@@ -54,24 +130,20 @@ export default function TradingPage() {
             {/* Bottom action bar */}
             <div className="mt-4 flex items-center justify-between px-2">
               {/* Quick bet amounts */}
-              <div className="flex items-center gap-2">
-                {[1, 3, 5, 10].map((amount) => (
-                  <button
-                    key={amount}
-                    className="bet-chip text-sm"
-                  >
-                    ${amount}
-                  </button>
-                ))}
-              </div>
+              <QuickBetChips
+                amounts={[1, 3, 5, 10]}
+                selectedAmount={selectedBetAmount}
+                onSelect={setSelectedBetAmount}
+              />
 
-              {/* Active bets indicator */}
-              <div className="flex items-center gap-4">
-                <div className="text-sm text-pulse-text-secondary">
-                  Active Bets: <span className="text-white font-semibold">0</span>
-                </div>
-                <div className="text-sm text-pulse-text-secondary">
-                  Potential Win: <span className="text-pulse-yellow font-semibold">$0.00</span>
+              {/* Bet info */}
+              <div className="flex items-center gap-4 text-sm">
+                <div className="text-pulse-text-secondary">
+                  Click grid to place{" "}
+                  <span className="text-pulse-yellow font-bold">
+                    ${selectedBetAmount}
+                  </span>{" "}
+                  bet
                 </div>
               </div>
             </div>
@@ -106,6 +178,31 @@ export default function TradingPage() {
                   <MessageCircle className="w-4 h-4 text-pulse-pink" />
                   Live Chat
                 </h2>
+              </div>
+
+              {/* Recent bets feed */}
+              <div className="p-3 border-b border-pulse-pink/10 bg-pulse-bg-secondary/30">
+                <h3 className="text-xs font-semibold text-pulse-text-secondary mb-2">
+                  Recent Bets
+                </h3>
+                <div className="space-y-2">
+                  {activeBets.slice(0, 3).map((bet) => (
+                    <div
+                      key={bet.id}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span className="text-white">${bet.amount} bet</span>
+                      <span className="text-pulse-yellow">
+                        {bet.multiplier.toFixed(1)}x
+                      </span>
+                    </div>
+                  ))}
+                  {activeBets.length === 0 && (
+                    <p className="text-xs text-pulse-text-secondary">
+                      No active bets
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Chat messages placeholder */}
@@ -199,5 +296,14 @@ export default function TradingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Main page component wrapped with ToastProvider
+export default function TradingPage() {
+  return (
+    <ToastProvider>
+      <TradingContent />
+    </ToastProvider>
   );
 }

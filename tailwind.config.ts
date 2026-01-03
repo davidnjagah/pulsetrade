@@ -26,6 +26,7 @@ const config: Config = {
         'pulse-multiplier': '#ffb6c1',
         'pulse-red': '#ff4d6d',
         'pulse-nav-active': '#4a3f6b',
+        'pulse-balance-icon': '#ff4d6d',
       },
       backgroundImage: {
         'pulse-gradient': 'linear-gradient(180deg, #1a0a2e 0%, #2d1b4e 50%, #3d1f5c 100%)',

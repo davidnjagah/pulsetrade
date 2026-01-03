@@ -159,3 +159,68 @@ body {
     min-height: 44px;
   }
 }
+
+/* Mobile-first responsive adjustments */
+@media (max-width: 640px) {
+  /* Sidebar collapses to icons only on mobile */
+  .sidebar-mobile {
+    width: 56px !important;
+  }
+
+  /* Reduce chart padding on mobile */
+  .chart-container {
+    padding: 0.5rem;
+  }
+
+  /* Stack bottom action bar vertically on small screens */
+  .action-bar-mobile {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* Smaller bet chips on mobile */
+  .bet-chip {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+  }
+
+  /* Hide expanded sidebar text on mobile */
+  .sidebar-label-mobile {
+    display: none;
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .grid-cell {
+    min-height: 60px;
+  }
+}
+
+/* Desktop adjustments */
+@media (min-width: 1025px) {
+  .grid-cell {
+    min-height: 80px;
+  }
+}
+
+/* Safe area insets for mobile devices with notches */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Chart line glow animation for the price line */
+.tv-lightweight-charts path {
+  filter: drop-shadow(0 0 4px #ff69b4);
+}
+
+/* Prevent zoom on double-tap for iOS */
+* {
+  touch-action: manipulation;
+}
