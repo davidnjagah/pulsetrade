@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { APIErrorResponse, UserBalance } from '@/lib/types';
+import { APIErrorResponse, UserBalance, SettingsData } from '@/lib/types';
 import {
   getUser,
   updateUserBalance,
@@ -22,6 +22,7 @@ import {
   DEFAULT_BALANCE,
 } from '@/lib/betService';
 import { getAuth, getUserIdWithFallback } from '@/lib/authMiddleware';
+import { getSettings } from '@/lib/settingsService';
 
 // ============================================
 // Response Helpers
@@ -65,6 +66,7 @@ interface UserProfileResponse {
     winRate: number;
     profit: number;
   };
+  settings: SettingsData;
 }
 
 interface BalanceUpdateRequest {
@@ -128,6 +130,7 @@ export async function GET(request: NextRequest) {
 
     // Return full profile
     const stats = getBetStats(userId);
+    const { settings } = getSettings(userId);
 
     // Determine username from auth or generate
     let username = 'Demo User';
@@ -158,6 +161,7 @@ export async function GET(request: NextRequest) {
         winRate: Math.round(stats.winRate * 100) / 100,
         profit: Math.round(stats.profit * 100) / 100,
       },
+      settings,
     };
 
     return NextResponse.json(response, {
@@ -412,6 +416,17 @@ export async function OPTIONS() {
  *     "losses": 5,
  *     "winRate": 0.44,
  *     "profit": -25.50
+ *   },
+ *   "settings": {
+ *     "backgroundMusic": false,
+ *     "soundEffects": true,
+ *     "slippageTolerance": 30,
+ *     "showHighLowArea": false,
+ *     "doubleTapForTrading": false,
+ *     "confirmBeforeBet": true,
+ *     "showMultipliers": true,
+ *     "compactMode": false,
+ *     "animationSpeed": "normal"
  *   }
  * }
  *

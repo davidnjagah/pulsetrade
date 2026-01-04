@@ -13,10 +13,12 @@ import Balance from "@/components/ui/Balance";
 import { useBets } from "@/hooks/useBets";
 import { useAuthContext } from "@/context/AuthContext";
 import { useChatContext } from "@/context/ChatContext";
+import { useSettingsContext } from "@/context/SettingsContext";
 import DemoModeBanner from "@/components/auth/DemoModeBanner";
 import WalletConnect from "@/components/auth/WalletConnect";
 import { ChatPanel, ChatToggleButton } from "@/components/chat";
-import { X, Wallet, Lock, Sparkles } from "lucide-react";
+import { SettingsModal } from "@/components/settings";
+import { Wallet, Lock, Sparkles } from "lucide-react";
 
 // Connect prompt component for unauthenticated users
 function ConnectPrompt() {
@@ -103,6 +105,7 @@ function TradingContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedBetAmount, setSelectedBetAmount] = useState(5);
   const [currentPrice] = useState(97500);
+  const [pendingBetCell, setPendingBetCell] = useState<GridCell | null>(null);
 
   // Auth context
   const {
@@ -115,6 +118,9 @@ function TradingContent() {
 
   // Chat context - for bet notifications
   const { addBetNotification } = useChatContext();
+
+  // Settings context
+  const { settings, getAnimationDuration } = useSettingsContext();
 
   // Toast notifications
   const { showWin, showLoss } = useToast();
@@ -171,14 +177,9 @@ function TradingContent() {
     }
   }, [balance, user?.isDemo, getDemoBalance, updateDemoBalance]);
 
-  // Handle grid cell click to place bet
-  const handleCellClick = useCallback(
+  // Execute bet placement
+  const executeBet = useCallback(
     (cell: GridCell) => {
-      // Don't allow betting if not connected
-      if (!isConnected) {
-        return;
-      }
-
       const targetTime = Date.now() + cell.timeOffset * 1000;
 
       const bet = placeBet(
@@ -197,7 +198,48 @@ function TradingContent() {
         console.log("Failed to place bet - insufficient balance");
       }
     },
-    [selectedBetAmount, placeBet, isConnected, addBetNotification]
+    [selectedBetAmount, placeBet, addBetNotification]
+  );
+
+  // Handle grid cell click to place bet
+  const handleCellClick = useCallback(
+    (cell: GridCell) => {
+      // Don't allow betting if not connected
+      if (!isConnected) {
+        return;
+      }
+
+      // Handle double tap for trading setting
+      if (settings.doubleTapForTrading) {
+        if (pendingBetCell && pendingBetCell.id === cell.id) {
+          // Second tap on same cell - execute bet
+          if (settings.confirmBeforeBet) {
+            // Show confirmation (would be a modal in full implementation)
+            // For now, just execute
+            executeBet(cell);
+          } else {
+            executeBet(cell);
+          }
+          setPendingBetCell(null);
+        } else {
+          // First tap - set pending
+          setPendingBetCell(cell);
+          // Clear pending after a short timeout
+          setTimeout(() => setPendingBetCell(null), 1500);
+        }
+        return;
+      }
+
+      // Single tap mode
+      if (settings.confirmBeforeBet) {
+        // Show confirmation (would be a modal in full implementation)
+        // For now, just execute the bet
+        executeBet(cell);
+      } else {
+        executeBet(cell);
+      }
+    },
+    [isConnected, settings.doubleTapForTrading, settings.confirmBeforeBet, pendingBetCell, executeBet]
   );
 
   return (
@@ -325,53 +367,11 @@ function TradingContent() {
         </div>
       </main>
 
-      {/* Settings modal placeholder */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-pulse-bg-secondary border border-pulse-pink/20 rounded-xl p-6 w-full max-w-md mx-4 animate-bounce-in">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-white">Settings</h2>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="p-2 rounded-lg hover:bg-pulse-bg/50 transition-colors"
-              >
-                <X className="w-5 h-5 text-pulse-text-secondary" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Settings options placeholder */}
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-white">Sound Effects</span>
-                <div className="w-10 h-5 rounded-full bg-pulse-pink/30 relative cursor-pointer">
-                  <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-pulse-pink transition-all" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-white">Double-tap to confirm</span>
-                <div className="w-10 h-5 rounded-full bg-pulse-bg relative cursor-pointer">
-                  <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-pulse-text-secondary transition-all" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-white">Show price alerts</span>
-                <div className="w-10 h-5 rounded-full bg-pulse-pink/30 relative cursor-pointer">
-                  <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-pulse-pink transition-all" />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-pulse-pink/10">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="w-full py-2 rounded-lg bg-pulse-pink hover:bg-pulse-pink-deep transition-colors text-white font-medium"
-              >
-                Save Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }

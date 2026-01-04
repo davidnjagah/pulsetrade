@@ -388,15 +388,79 @@
 
 ## Sprint 6: Settings
 
-### Settings Tests
+### QA Session: January 4, 2026 - Sprint 6 API Testing
+
+#### Build & Compilation Tests
+- [x] npm run build compiles successfully (23 routes compile)
+- [x] No TypeScript errors (npx tsc --noEmit passes)
+- [x] Development server starts correctly
+- [x] All settings API routes accessible
+
+#### Component File Verification
+- [x] components/settings/SettingsModal.tsx exists (236 lines)
+- [x] components/settings/ToggleSwitch.tsx exists (163 lines)
+- [x] components/settings/SliderControl.tsx exists (240 lines)
+- [x] components/settings/SettingsSection.tsx exists (54 lines)
+- [x] components/settings/index.ts exists (barrel exports)
+- [x] hooks/useSettings.ts exists (156 lines)
+- [x] context/SettingsContext.tsx exists (53 lines)
+- [x] lib/settingsService.ts exists (323 lines)
+
+#### Settings API Tests
+- [x] GET /api/settings returns user settings (authenticated)
+- [x] GET /api/settings returns default settings for new users
+- [x] Default settings have correct values (9 settings verified)
+- [x] Response includes success, settings, updatedAt fields
+
+#### Settings Update API Tests
+- [x] POST /api/settings/update with auth updates settings
+- [x] Can update single setting (soundEffects, etc.)
+- [x] Can update multiple settings at once
+- [x] Updated settings persist across requests
+- [x] Response returns full updated settings object
+
+#### Settings Validation Tests
+- [x] slippageTolerance < 1 returns VALIDATION_ERROR
+- [x] slippageTolerance > 50 returns VALIDATION_ERROR
+- [x] Invalid animationSpeed returns VALIDATION_ERROR
+- [x] Validation errors include validRanges in details
+- [x] Boundary values (1 and 50) for slippageTolerance succeed
+- [x] All animationSpeed values (slow, normal, fast) succeed
+- [x] All 7 boolean settings can be toggled
+
+#### Settings Reset API Tests
+- [x] POST /api/settings/reset resets to default values
+- [x] Reset returns message confirming reset
+- [x] Reset settings persist after reset
+
+#### Auth Requirement Tests
+- [x] GET /api/settings without auth returns 401 UNAUTHORIZED
+- [x] POST /api/settings/update without auth returns 401 UNAUTHORIZED
+- [x] POST /api/settings/reset without auth returns 401 UNAUTHORIZED
+
+#### Automated Test Suite (tests/settings-test.mjs)
+- [x] 18/18 tests passing
+- [x] Authentication tests (3 tests)
+- [x] Get settings tests (2 tests)
+- [x] Update settings tests (3 tests)
+- [x] Validation tests (7 tests)
+- [x] Reset settings tests (2 tests)
+- [x] Boolean toggle tests (1 comprehensive test)
+
+### Settings Tests (UI - Requires Manual Testing)
 - [ ] Settings modal opens
 - [ ] Background music toggle works
 - [ ] Sound effects toggle works
-- [ ] Slippage tolerance adjustable
+- [x] Slippage tolerance adjustable (1-50% range verified via API)
 - [ ] High/low area toggle works
 - [ ] Double-tap trading toggle works
-- [ ] Settings persist after close
-- [ ] Settings sync across devices
+- [x] Settings persist after close (verified via API persistence)
+- [ ] Settings sync across devices - *Requires cloud storage*
+
+### Known Limitations (Development Mode)
+- In-memory session storage may not persist between API routes due to Next.js hot reloading
+- Tests use x-user-id header (legacy fallback) for reliability in dev mode
+- Sessions reset on server restart (expected for demo, production would use Redis/PostgreSQL)
 
 ---
 

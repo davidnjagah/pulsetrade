@@ -17,13 +17,59 @@ export interface User {
   updatedAt: Date;
 }
 
+export type AnimationSpeed = 'slow' | 'normal' | 'fast';
+
 export interface UserSettings {
   userId: string;
+  // Sounds Section
   backgroundMusic: boolean;
   soundEffects: boolean;
-  slippageTolerance: number; // percentage (0-100)
-  showHighLow: boolean;
-  doubleTapTrading: boolean;
+  // Trading Section
+  slippageTolerance: number; // 1-50%
+  showHighLowArea: boolean;
+  doubleTapForTrading: boolean;
+  confirmBeforeBet: boolean;
+  // Display Section
+  showMultipliers: boolean;
+  compactMode: boolean;
+  animationSpeed: AnimationSpeed;
+}
+
+// Settings without userId for API responses
+export interface SettingsData {
+  backgroundMusic: boolean;
+  soundEffects: boolean;
+  slippageTolerance: number;
+  showHighLowArea: boolean;
+  doubleTapForTrading: boolean;
+  confirmBeforeBet: boolean;
+  showMultipliers: boolean;
+  compactMode: boolean;
+  animationSpeed: AnimationSpeed;
+}
+
+export interface SettingsUpdateRequest {
+  backgroundMusic?: boolean;
+  soundEffects?: boolean;
+  slippageTolerance?: number;
+  showHighLowArea?: boolean;
+  doubleTapForTrading?: boolean;
+  confirmBeforeBet?: boolean;
+  showMultipliers?: boolean;
+  compactMode?: boolean;
+  animationSpeed?: AnimationSpeed;
+}
+
+export interface SettingsResponse {
+  success: boolean;
+  settings: SettingsData;
+  updatedAt: string;
+}
+
+export interface SettingsValidationError {
+  field: string;
+  message: string;
+  value: unknown;
 }
 
 // ============================================
@@ -408,8 +454,12 @@ export interface UserSettingsRow {
   background_music: boolean;
   sound_effects: boolean;
   slippage_tolerance: number;
-  show_high_low: boolean;
-  double_tap_trading: boolean;
+  show_high_low_area: boolean;
+  double_tap_for_trading: boolean;
+  confirm_before_bet: boolean;
+  show_multipliers: boolean;
+  compact_mode: boolean;
+  animation_speed: 'slow' | 'normal' | 'fast';
 }
 
 export interface LeaderboardRow {
