@@ -4,6 +4,8 @@
  *
  * Returns all active (unresolved) bets for a user along with
  * total exposure calculation.
+ *
+ * AUTHENTICATION: Required - filters bets by authenticated user
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,6 +21,7 @@ import {
   getBetStats,
   DEFAULT_USER_ID,
 } from '@/lib/betService';
+import { getAuth, getUserIdWithFallback } from '@/lib/authMiddleware';
 
 // ============================================
 // Response Helpers
@@ -96,8 +99,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'active';
 
-    // Extract user ID from header (mock auth) or use default
-    const userId = request.headers.get('x-user-id') || DEFAULT_USER_ID;
+    // Get authenticated user (with fallback to legacy header)
+    const auth = getAuth(request);
+    const userId = auth?.userId || getUserIdWithFallback(request);
+
+    // Check if user is authenticated
+    if (!auth) {
+      // Allow legacy x-user-id header for backwards compatibility
+      const legacyUserId = request.headers.get('x-user-id');
+      if (!legacyUserId) {
+        return errorResponse(
+          'UNAUTHORIZED',
+          'Authentication required. Please connect your wallet.',
+          401
+        );
+      }
+      console.log(`[BetsActive] Using legacy auth for user: ${legacyUserId}`);
+    }
 
     switch (mode) {
       case 'active':
@@ -241,7 +259,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, x-session-token',
     },
   });
 }
@@ -255,14 +273,16 @@ export async function OPTIONS() {
  *
  * Get user's active bets.
  *
+ * Authentication:
+ * - Authorization: Bearer <sessionToken>
+ * - Cookie: pulsetrade_session=<token>
+ * - Legacy: x-user-id header (for backwards compatibility)
+ *
  * Query Parameters:
  * - mode: "active" (default) | "history" | "recent" | "stats"
  * - page: Page number for history mode (default: 1)
  * - limit: Items per page (default: 20, max: 100)
  * - status: Filter by status for history mode (active, won, lost, expired)
- *
- * Headers:
- * - x-user-id: User identifier (optional, defaults to demo user)
  *
  * Response (mode=active, 200):
  * {
@@ -291,4 +311,9 @@ export async function OPTIONS() {
  *   "profit": -20,
  *   "activeBetsAmount": 25
  * }
+ *
+ * Error Responses:
+ * - 401: Unauthorized (no valid session)
+ * - 400: Invalid mode parameter
+ * - 500: Internal server error
  */

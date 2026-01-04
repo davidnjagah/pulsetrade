@@ -1,9 +1,12 @@
 /**
  * PulseTrade User API
  * GET /api/user - Get user profile with balance
- * POST /api/user/balance - Update balance (for demo)
+ * POST /api/user - Update balance (for demo)
+ * PUT /api/user - Reset balance to default
  *
  * Provides user information and balance management for the demo.
+ *
+ * AUTHENTICATION: Required for protected operations
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,6 +21,7 @@ import {
   DEFAULT_USER_ID,
   DEFAULT_BALANCE,
 } from '@/lib/betService';
+import { getAuth, getUserIdWithFallback } from '@/lib/authMiddleware';
 
 // ============================================
 // Response Helpers
@@ -47,11 +51,13 @@ function errorResponse(
 
 interface UserProfileResponse {
   id: string;
+  walletAddress: string | null;
   username: string;
   avatarUrl: string | null;
   balance: number;
   lockedInBets: number;
   available: number;
+  isDemo: boolean;
   stats: {
     totalBets: number;
     wins: number;
@@ -82,8 +88,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'full';
 
-    // Extract user ID from header or use default
-    const userId = request.headers.get('x-user-id') || DEFAULT_USER_ID;
+    // Get authenticated user (with fallback to legacy header)
+    const auth = getAuth(request);
+    const userId = auth?.userId || getUserIdWithFallback(request);
+
+    // Check if user is authenticated
+    if (!auth) {
+      // Allow legacy x-user-id header for backwards compatibility
+      const legacyUserId = request.headers.get('x-user-id');
+      if (!legacyUserId) {
+        return errorResponse(
+          'UNAUTHORIZED',
+          'Authentication required. Please connect your wallet.',
+          401
+        );
+      }
+      console.log(`[User] Using legacy auth for user: ${legacyUserId}`);
+    }
 
     const user = getUser(userId);
     const activeBets = getActiveBets(userId);
@@ -108,13 +129,28 @@ export async function GET(request: NextRequest) {
     // Return full profile
     const stats = getBetStats(userId);
 
+    // Determine username from auth or generate
+    let username = 'Demo User';
+    let walletAddress: string | null = null;
+    let isDemo = true;
+
+    if (auth) {
+      walletAddress = auth.walletAddress;
+      isDemo = auth.isDemo;
+      username = isDemo ? 'Demo User' : `User_${auth.walletAddress.slice(0, 6)}`;
+    } else if (userId !== DEFAULT_USER_ID) {
+      username = `User_${userId.slice(0, 6)}`;
+    }
+
     const response: UserProfileResponse = {
       id: userId,
-      username: userId === DEFAULT_USER_ID ? 'Demo User' : `User_${userId.slice(0, 6)}`,
+      walletAddress,
+      username,
       avatarUrl: null,
       balance: user.balance,
       lockedInBets,
       available,
+      isDemo,
       stats: {
         totalBets: stats.totalBets,
         wins: stats.wins,
@@ -146,7 +182,23 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id') || DEFAULT_USER_ID;
+    // Get authenticated user (with fallback to legacy header)
+    const auth = getAuth(request);
+    const userId = auth?.userId || getUserIdWithFallback(request);
+
+    // Check if user is authenticated
+    if (!auth) {
+      // Allow legacy x-user-id header for backwards compatibility
+      const legacyUserId = request.headers.get('x-user-id');
+      if (!legacyUserId) {
+        return errorResponse(
+          'UNAUTHORIZED',
+          'Authentication required. Please connect your wallet.',
+          401
+        );
+      }
+      console.log(`[User] Using legacy auth for user: ${legacyUserId}`);
+    }
 
     // Parse request body
     let body: BalanceUpdateRequest;
@@ -261,7 +313,23 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id') || DEFAULT_USER_ID;
+    // Get authenticated user (with fallback to legacy header)
+    const auth = getAuth(request);
+    const userId = auth?.userId || getUserIdWithFallback(request);
+
+    // Check if user is authenticated
+    if (!auth) {
+      // Allow legacy x-user-id header for backwards compatibility
+      const legacyUserId = request.headers.get('x-user-id');
+      if (!legacyUserId) {
+        return errorResponse(
+          'UNAUTHORIZED',
+          'Authentication required. Please connect your wallet.',
+          401
+        );
+      }
+      console.log(`[User] Using legacy auth for user: ${legacyUserId}`);
+    }
 
     // Reset to default balance
     const newUser = updateUserBalance(userId, DEFAULT_BALANCE);
@@ -306,7 +374,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, x-session-token',
     },
   });
 }
@@ -320,20 +388,24 @@ export async function OPTIONS() {
  *
  * Get user profile with balance and stats.
  *
+ * Authentication:
+ * - Authorization: Bearer <sessionToken>
+ * - Cookie: pulsetrade_session=<token>
+ * - Legacy: x-user-id header (for backwards compatibility)
+ *
  * Query Parameters:
  * - mode: "full" (default) | "balance"
  *
- * Headers:
- * - x-user-id: User identifier (optional, defaults to demo user)
- *
  * Response (mode=full, 200):
  * {
- *   "id": "demo-user",
+ *   "id": "user_demo1234_abc",
+ *   "walletAddress": "demo123...",
  *   "username": "Demo User",
  *   "avatarUrl": null,
  *   "balance": 10000,
  *   "lockedInBets": 50,
  *   "available": 9950,
+ *   "isDemo": true,
  *   "stats": {
  *     "totalBets": 10,
  *     "wins": 4,
@@ -381,4 +453,9 @@ export async function OPTIONS() {
  *   "lockedInBets": 0,
  *   "defaultBalance": 10000
  * }
+ *
+ * Error Responses:
+ * - 401: Unauthorized (no valid session)
+ * - 400: Invalid request parameters
+ * - 500: Internal server error
  */

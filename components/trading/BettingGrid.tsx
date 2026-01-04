@@ -22,6 +22,7 @@ interface BettingGridProps {
   onCellClick?: (cell: GridCell) => void;
   bets?: Bet[];
   selectedAmount?: number;
+  disabled?: boolean;
 }
 
 // Generate multiplier based on distance from current price and time
@@ -44,6 +45,7 @@ export default function BettingGrid({
   onCellClick,
   bets = [],
   selectedAmount = 5,
+  disabled = false,
 }: BettingGridProps) {
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export default function BettingGrid({
   };
 
   const handleCellClick = (cell: GridCell) => {
+    if (disabled) return;
     setSelectedCell(cell.id);
     onCellClick?.(cell);
   };
@@ -106,11 +109,13 @@ export default function BettingGrid({
             <button
               key={cell.id}
               onClick={() => handleCellClick(cell)}
-              onMouseEnter={() => setHoveredCell(cell.id)}
+              onMouseEnter={() => !disabled && setHoveredCell(cell.id)}
               onMouseLeave={() => setHoveredCell(null)}
+              disabled={disabled}
               className={`
                 grid-cell relative flex flex-col items-center justify-center
-                transition-all duration-200 cursor-pointer
+                transition-all duration-200
+                ${disabled ? "cursor-not-allowed" : "cursor-pointer"}
                 ${
                   hoveredCell === cell.id
                     ? "bg-pulse-pink/20 border-pulse-pink/40"

@@ -318,3 +318,90 @@ export interface LeaderboardRow {
   losses: number;
   profit: number;
 }
+
+// ============================================
+// Authentication Types
+// ============================================
+
+export type WalletType = 'phantom' | 'solflare' | 'demo';
+
+export interface Session {
+  id: string;
+  userId: string;
+  walletAddress: string;
+  walletType: WalletType;
+  createdAt: Date;
+  expiresAt: Date;
+  lastActivityAt: Date;
+}
+
+export interface SessionUser {
+  id: string;
+  walletAddress: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  balance: number;
+  isDemo: boolean;
+}
+
+export interface SessionValidation {
+  valid: boolean;
+  error?: string;
+  session?: Session;
+  user?: SessionUser;
+}
+
+export interface AuthConnectRequest {
+  walletAddress: string;
+  walletType: WalletType;
+  signature?: string; // Optional signature for wallet verification
+}
+
+export interface AuthConnectResponse {
+  success: boolean;
+  sessionToken: string;
+  expiresAt: string;
+  user: {
+    id: string;
+    walletAddress: string;
+    displayName: string;
+    avatarUrl: string | null;
+    balance: number;
+    isDemo: boolean;
+    isNewUser: boolean;
+  };
+}
+
+export interface AuthDisconnectRequest {
+  sessionToken?: string; // Optional, can also come from header
+}
+
+export interface AuthDisconnectResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface AuthSessionResponse {
+  valid: boolean;
+  user?: {
+    id: string;
+    walletAddress: string;
+    displayName: string;
+    avatarUrl: string | null;
+    balance: number;
+    isDemo: boolean;
+  };
+  session?: {
+    createdAt: string;
+    expiresAt: string;
+    lastActivityAt: string;
+  };
+  error?: string;
+}
+
+export interface AuthenticatedRequest {
+  userId: string;
+  walletAddress: string;
+  session: Session;
+  isDemo: boolean;
+}

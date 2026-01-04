@@ -4,6 +4,8 @@
  *
  * Validates bet parameters, checks balance, calculates multiplier,
  * and creates a new active bet.
+ *
+ * AUTHENTICATION: Required - validates session token
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,6 +16,7 @@ import {
   BETTING_LIMITS,
 } from '@/lib/types';
 import { placeBet, getUser, DEFAULT_USER_ID } from '@/lib/betService';
+import { getAuth, getUserIdWithFallback } from '@/lib/authMiddleware';
 
 // ============================================
 // Response Helpers
@@ -97,8 +100,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract user ID from header (mock auth) or use default
-    const userId = request.headers.get('x-user-id') || DEFAULT_USER_ID;
+    // Get authenticated user (with fallback to legacy header for backwards compatibility)
+    const auth = getAuth(request);
+    const userId = auth?.userId || getUserIdWithFallback(request);
+
+    // Check if user is authenticated
+    if (!auth) {
+      // Allow legacy x-user-id header for backwards compatibility
+      const legacyUserId = request.headers.get('x-user-id');
+      if (!legacyUserId) {
+        return errorResponse(
+          'UNAUTHORIZED',
+          'Authentication required. Please connect your wallet.',
+          401
+        );
+      }
+      console.log(`[BetsPlace] Using legacy auth for user: ${legacyUserId}`);
+    }
 
     // Check rate limit
     if (!checkRateLimit(userId)) {
@@ -148,8 +166,13 @@ export async function POST(request: NextRequest) {
     // Get current market price for validation
     const currentPrice = await getCurrentPrice();
 
-    // Place the bet
+    // Place the bet (linked to authenticated user's wallet address)
     const response = await placeBet(userId, body, currentPrice);
+
+    // Log bet placement with auth info
+    if (auth) {
+      console.log(`[BetsPlace] Bet placed by ${auth.walletAddress.slice(0, 8)}... (${auth.isDemo ? 'demo' : 'wallet'}): $${amount}`);
+    }
 
     // Return success response
     return NextResponse.json(response, {
@@ -212,7 +235,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, x-session-token',
     },
   });
 }
@@ -225,6 +248,11 @@ export async function OPTIONS() {
  * POST /api/bets/place
  *
  * Place a new bet on price movement.
+ *
+ * Authentication:
+ * - Authorization: Bearer <sessionToken>
+ * - Cookie: pulsetrade_session=<token>
+ * - Legacy: x-user-id header (for backwards compatibility)
  *
  * Request Body:
  * {
@@ -249,6 +277,7 @@ export async function OPTIONS() {
  *
  * Error Responses:
  * - 400: Invalid parameters (amount, price, time)
+ * - 401: Unauthorized (no valid session)
  * - 402: Insufficient balance
  * - 429: Rate limited (cooldown)
  * - 500: Internal server error

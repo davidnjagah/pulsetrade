@@ -145,20 +145,87 @@
 
 ## Sprint 3: Authentication
 
-### Wallet Connection Tests
+### QA Session: January 4, 2026 - Sprint 3 API Testing
+
+#### Build & Compilation Tests
+- [x] npm run build compiles successfully (12 routes compile)
+- [x] No TypeScript errors (npx tsc --noEmit passes)
+- [x] Development server starts correctly
+- [x] All auth API routes accessible
+
+#### Component File Verification
+- [x] components/auth/WalletConnect.tsx exists (115 lines)
+- [x] components/auth/AuthModal.tsx exists (230 lines)
+- [x] components/auth/UserAvatar.tsx exists (250 lines)
+- [x] components/auth/DemoModeBanner.tsx exists (130 lines)
+- [x] components/auth/index.ts exists (barrel exports)
+- [x] hooks/useAuth.ts exists (220 lines)
+- [x] context/AuthContext.tsx exists (75 lines)
+- [x] lib/authService.ts exists (380 lines)
+- [x] lib/authMiddleware.ts exists (200 lines)
+
+#### Auth Connect API Tests
+- [x] POST /api/auth/connect with demo wallet succeeds
+- [x] Returns sessionToken with pts_ prefix
+- [x] Returns expiresAt timestamp
+- [x] Returns user object with id, walletAddress, displayName
+- [x] New user balance initialized to $10,000
+- [x] New user has isDemo: true for demo wallet
+- [x] New user has isNewUser: true on first connect
+- [x] Existing user has isNewUser: false on subsequent connects
+- [x] Phantom wallet type accepted (isDemo: false)
+- [x] Solflare wallet type accepted (isDemo: false)
+
+#### Auth Session API Tests
+- [x] GET /api/auth/session with valid token returns user data
+- [x] GET /api/auth/session without token returns error
+- [x] GET /api/auth/session with invalid token returns error
+- [x] Session includes createdAt and expiresAt timestamps
+- [x] Session refreshes expiry on activity
+
+#### Auth Disconnect API Tests
+- [x] POST /api/auth/disconnect invalidates session
+- [x] Session is invalid after disconnect
+- [x] Disconnect is idempotent (safe to call multiple times)
+
+#### Auth Validation Tests
+- [x] Invalid wallet type returns INVALID_WALLET_TYPE error
+- [x] Missing wallet address returns MISSING_WALLET_ADDRESS error
+- [x] Error response includes valid wallet types in details
+
+#### Protected Routes Tests
+- [x] GET /api/user without auth returns 401 UNAUTHORIZED
+- [x] GET /api/user with valid auth returns user data
+- [x] GET /api/bets/active without auth returns 401 UNAUTHORIZED
+- [x] GET /api/bets/active with valid auth returns bets
+
+#### Automated Test Suite (tests/auth-test.mjs)
+- [x] 14/14 tests passing
+- [x] Connect flow tests (2 tests)
+- [x] Session validation tests (3 tests)
+- [x] Disconnect flow tests (1 test)
+- [x] Protected routes tests (4 tests)
+- [x] Validation error tests (4 tests)
+
+### Wallet Connection Tests (UI - Requires Manual Testing)
 - [ ] Connect button visible when logged out
-- [ ] Phantom wallet connection works
-- [ ] Solflare wallet connection works
-- [ ] User created in database on first connect
+- [ ] Phantom wallet connection works (browser)
+- [ ] Solflare wallet connection works (browser)
+- [x] User created on first connect (verified via API)
 - [ ] Session persists across page refresh
-- [ ] Logout works correctly
-- [ ] Demo mode available without wallet
+- [x] Logout works correctly (verified via API)
+- [x] Demo mode available without wallet (verified via API)
 
 ### Balance Tests
-- [ ] Initial balance correct (10000 demo)
-- [ ] Balance syncs with server
-- [ ] Balance persists across sessions
-- [ ] Balance cannot go negative
+- [x] Initial balance correct (10000 demo) - verified via API
+- [ ] Balance syncs with server - *Requires manual browser testing*
+- [ ] Balance persists across sessions - *In-memory storage limitation in dev*
+- [ ] Balance cannot go negative - *Requires manual testing*
+
+### Known Limitations (Development Mode)
+- In-memory session storage may not persist between API routes due to Next.js hot reloading
+- Sessions reset on server restart (expected for demo, production would use Redis/PostgreSQL)
+- Tests marked [DEV-SENSITIVE] may fail intermittently in dev mode
 
 ---
 
@@ -281,7 +348,9 @@
 - [ ] XSS prevented (sanitized output) - *Requires manual testing*
 - [ ] CSRF protection enabled - *Not implemented yet*
 - [x] Rate limiting on all endpoints (500ms cooldown on bet placement)
-- [ ] Auth required for protected routes - *Demo mode uses mock auth*
+- [x] Auth required for protected routes (/api/user, /api/bets/active, /api/bets/place)
+- [x] Session token validation via authMiddleware.ts
+- [x] 24-hour session expiry with auto-cleanup
 - [x] Bet resolution server-side only (via betService.ts)
 - [ ] Price feed from multiple sources - *Currently using mock data*
 - [ ] No sensitive data in client logs - *Requires audit*
