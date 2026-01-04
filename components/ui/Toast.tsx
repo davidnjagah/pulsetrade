@@ -124,8 +124,13 @@ function ToastContainer({
       aria-live="polite"
     >
       <AnimatePresence mode="popLayout">
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
+        {toasts.map((toast, index) => (
+          <ToastItem
+            key={toast.id}
+            toast={toast}
+            onClose={() => removeToast(toast.id)}
+            index={index}
+          />
         ))}
       </AnimatePresence>
     </div>
@@ -136,9 +141,11 @@ function ToastContainer({
 function ToastItem({
   toast,
   onClose,
+  index = 0,
 }: {
   toast: Toast;
   onClose: () => void;
+  index?: number;
 }) {
   const getIcon = () => {
     switch (toast.type) {
@@ -159,35 +166,39 @@ function ToastItem({
     switch (toast.type) {
       case "win":
         return {
-          bg: "rgba(0, 0, 0, 0.9)",
+          bg: "rgba(0, 0, 0, 0.92)",
           iconBg: "bg-green-500/20",
           iconColor: "text-green-400",
-          border: "border-green-500/30",
-          glow: "shadow-[0_0_20px_rgba(34,197,94,0.3)]",
+          border: "border-green-500/40",
+          glow: "shadow-[0_0_30px_rgba(34,197,94,0.25)]",
+          accent: "#22c55e",
         };
       case "loss":
         return {
-          bg: "rgba(0, 0, 0, 0.9)",
+          bg: "rgba(0, 0, 0, 0.92)",
           iconBg: "bg-red-500/20",
           iconColor: "text-red-400",
-          border: "border-red-500/30",
-          glow: "shadow-[0_0_20px_rgba(239,68,68,0.3)]",
+          border: "border-red-500/40",
+          glow: "shadow-[0_0_30px_rgba(239,68,68,0.25)]",
+          accent: "#ef4444",
         };
       case "success":
         return {
-          bg: "rgba(0, 0, 0, 0.9)",
+          bg: "rgba(0, 0, 0, 0.92)",
           iconBg: "bg-green-500/20",
           iconColor: "text-green-400",
           border: "border-green-500/30",
-          glow: "",
+          glow: "shadow-[0_0_20px_rgba(34,197,94,0.15)]",
+          accent: "#22c55e",
         };
       case "error":
         return {
-          bg: "rgba(0, 0, 0, 0.9)",
+          bg: "rgba(0, 0, 0, 0.92)",
           iconBg: "bg-red-500/20",
           iconColor: "text-red-400",
           border: "border-red-500/30",
-          glow: "",
+          glow: "shadow-[0_0_20px_rgba(239,68,68,0.15)]",
+          accent: "#ef4444",
         };
       default:
         return {
@@ -196,6 +207,7 @@ function ToastItem({
           iconColor: "text-blue-400",
           border: "border-pulse-pink/20",
           glow: "",
+          accent: "#ff69b4",
         };
     }
   };
@@ -204,83 +216,173 @@ function ToastItem({
 
   return (
     <motion.div
-      layout
+      layout="position"
+      layoutId={toast.id}
       initial={{
         opacity: 0,
-        x: 100,
-        scale: 0.9,
+        x: 120,
+        scale: 0.85,
+        y: 10,
       }}
       animate={{
         opacity: 1,
         x: 0,
         scale: 1,
+        y: 0,
+        transition: {
+          type: "spring",
+          stiffness: 400,
+          damping: 25,
+          mass: 0.8,
+        },
       }}
       exit={{
         opacity: 0,
-        x: 100,
+        x: 80,
         scale: 0.9,
         transition: {
-          duration: 0.15,
+          duration: 0.2,
+          ease: [0.4, 0, 1, 1],
         },
+      }}
+      whileHover={{
+        scale: 1.02,
+        x: -5,
+        transition: { duration: 0.2 },
       }}
       className={`
         pointer-events-auto flex items-center gap-3
-        px-4 py-3 rounded-xl backdrop-blur-md
+        px-4 py-3 rounded-xl backdrop-blur-lg
         border ${styles.border} ${styles.glow}
         min-w-[280px] max-w-[360px]
+        relative overflow-hidden
+        cursor-pointer
       `}
       style={{
         background: styles.bg,
       }}
+      onClick={onClose}
     >
-      {/* Icon */}
-      <div
+      {/* Animated accent line on left */}
+      <motion.div
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+        style={{ background: styles.accent }}
+        initial={{ scaleY: 0 }}
+        animate={{ scaleY: 1 }}
+        transition={{ duration: 0.3, delay: 0.1 }}
+      />
+
+      {/* Icon with subtle animation */}
+      <motion.div
         className={`
           flex items-center justify-center w-10 h-10 rounded-lg
           ${styles.iconBg} ${styles.iconColor}
         `}
+        initial={{ scale: 0, rotate: -15 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{
+          type: "spring",
+          stiffness: 500,
+          damping: 20,
+          delay: 0.1,
+        }}
       >
-        {getIcon()}
-      </div>
+        {toast.type === "win" && (
+          <motion.div
+            animate={{
+              scale: [1, 1.15, 1],
+              rotate: [0, -5, 5, 0],
+            }}
+            transition={{
+              duration: 0.6,
+              delay: 0.3,
+              ease: "easeOut",
+            }}
+          >
+            {getIcon()}
+          </motion.div>
+        )}
+        {toast.type !== "win" && getIcon()}
+      </motion.div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-white truncate">
+        <motion.p
+          className="text-sm font-semibold text-white truncate"
+          initial={{ opacity: 0, x: 10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.15 }}
+        >
           {toast.title}
-        </p>
+        </motion.p>
         {toast.message && (
-          <p className="text-xs text-gray-400 truncate mt-0.5">
+          <motion.p
+            className="text-xs text-gray-400 truncate mt-0.5"
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
             {toast.message}
-          </p>
+          </motion.p>
         )}
       </div>
 
       {/* Close Button */}
-      <button
-        onClick={onClose}
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
         className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
         aria-label="Close notification"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
       >
         <X className="w-4 h-4" />
-      </button>
+      </motion.button>
 
-      {/* Progress Bar */}
+      {/* Progress Bar with glow */}
       {toast.duration && toast.duration > 0 && (
+        <>
+          <motion.div
+            className="absolute bottom-0 left-0 h-0.5 rounded-full"
+            style={{
+              background:
+                toast.type === "win"
+                  ? "linear-gradient(90deg, #22c55e, #4ade80)"
+                  : toast.type === "loss"
+                  ? "linear-gradient(90deg, #ef4444, #f87171)"
+                  : "linear-gradient(90deg, #ff69b4, #ff1493)",
+              boxShadow:
+                toast.type === "win"
+                  ? "0 0 10px rgba(34,197,94,0.5)"
+                  : toast.type === "loss"
+                  ? "0 0 10px rgba(239,68,68,0.5)"
+                  : "0 0 10px rgba(255,105,180,0.5)",
+            }}
+            initial={{ width: "100%" }}
+            animate={{ width: "0%" }}
+            transition={{
+              duration: toast.duration / 1000,
+              ease: "linear",
+            }}
+          />
+        </>
+      )}
+
+      {/* Shimmer effect for win toasts */}
+      {toast.type === "win" && (
         <motion.div
-          className="absolute bottom-0 left-0 h-0.5 rounded-full"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            background:
-              toast.type === "win"
-                ? "linear-gradient(90deg, #22c55e, #4ade80)"
-                : toast.type === "loss"
-                ? "linear-gradient(90deg, #ef4444, #f87171)"
-                : "linear-gradient(90deg, #ff69b4, #ff1493)",
+            background: "linear-gradient(90deg, transparent, rgba(34,197,94,0.1), transparent)",
           }}
-          initial={{ width: "100%" }}
-          animate={{ width: "0%" }}
+          initial={{ x: "-100%" }}
+          animate={{ x: "200%" }}
           transition={{
-            duration: toast.duration / 1000,
-            ease: "linear",
+            duration: 1,
+            delay: 0.5,
+            ease: "easeInOut",
           }}
         />
       )}

@@ -6,6 +6,13 @@
  * - True probability: Mathematical chance of price reaching target
  * - Fair multiplier: 1 / true probability (what player should get in fair game)
  * - Display multiplier: Fair multiplier * (1 - house edge) (actual payout)
+ * - Exposure-based adjustment: Reduce multipliers when exposure is high
+ * - Volatility factor integration: Adjust for market conditions
+ *
+ * Revenue Math:
+ * - House Edge: 20% reduction from fair odds
+ * - Platform Fee: 5% fee on winnings
+ * - Combined effective edge: ~22-25%
  */
 
 import {
@@ -16,6 +23,15 @@ import {
   BETTING_LIMITS,
   FEE_CONFIG,
 } from './types';
+
+import {
+  getBetDirection,
+  getMultiplierAdjustment,
+  adjustMultiplier as applyExposureAdjustment,
+  getCircuitBreakerState,
+  calculateVolatility,
+  PriceDirection,
+} from './riskManagement';
 
 // ============================================
 // Constants
@@ -28,6 +44,15 @@ const MAX_PROBABILITY = 0.95;
 
 // Volatility adjustments
 const BASE_VOLATILITY = 0.02; // 2% as baseline SOL volatility
+
+// Extended multiplier result with exposure info
+export interface ExtendedMultiplierResult extends MultiplierResult {
+  baseMultiplier: number;
+  exposureAdjustment: number;
+  volatilityAdjustment: number;
+  direction: PriceDirection;
+  warnings: string[];
+}
 
 // ============================================
 // Core Calculation Functions
@@ -137,6 +162,216 @@ export function calculateMultiplier(
   });
 
   return result.multiplier;
+}
+
+// ============================================
+// Exposure-Based Multiplier Adjustment
+// ============================================
+
+/**
+ * Calculate multiplier with exposure-based adjustment
+ *
+ * This is the PREFERRED function for production use.
+ * It applies house edge + exposure adjustment + volatility factor.
+ *
+ * @param input - Multiplier input parameters
+ * @returns Extended result with all adjustment details
+ */
+export function calculateAdjustedMultiplier(input: MultiplierInput): ExtendedMultiplierResult {
+  const { currentPrice, targetPrice, currentTime, targetTime, volatility } = input;
+  const warnings: string[] = [];
+
+  // Get base calculation (with house edge)
+  const baseResult = calculateDisplayMultiplier(input);
+  const baseMultiplier = baseResult.multiplier;
+
+  // Determine bet direction
+  const direction = getBetDirection(currentPrice, targetPrice);
+
+  // Check circuit breaker state
+  const circuitBreaker = getCircuitBreakerState();
+  if (!circuitBreaker.allowBetting) {
+    warnings.push(`Trading suspended: ${circuitBreaker.reason}`);
+    return {
+      ...baseResult,
+      multiplier: 0,
+      baseMultiplier,
+      exposureAdjustment: 0,
+      volatilityAdjustment: circuitBreaker.multiplierAdjustment,
+      direction,
+      warnings,
+    };
+  }
+
+  // Get exposure adjustment factor
+  const exposureAdjustment = getMultiplierAdjustment(direction);
+
+  // Get volatility adjustment from circuit breaker
+  const volatilityAdjustment = circuitBreaker.multiplierAdjustment;
+
+  // Apply adjustments
+  let adjustedMultiplier = baseMultiplier * exposureAdjustment * volatilityAdjustment;
+
+  // Ensure minimum multiplier
+  adjustedMultiplier = Math.max(MIN_MULTIPLIER, Math.round(adjustedMultiplier * 100) / 100);
+
+  // Add warnings for significant adjustments
+  if (exposureAdjustment < 1.0) {
+    warnings.push(`Multiplier reduced ${Math.round((1 - exposureAdjustment) * 100)}% due to high ${direction} exposure`);
+  }
+
+  if (volatilityAdjustment < 1.0) {
+    warnings.push(`Multiplier reduced ${Math.round((1 - volatilityAdjustment) * 100)}% due to market volatility`);
+  }
+
+  return {
+    multiplier: adjustedMultiplier,
+    trueProbability: baseResult.trueProbability,
+    fairMultiplier: baseResult.fairMultiplier,
+    houseEdge: baseResult.houseEdge,
+    baseMultiplier,
+    exposureAdjustment,
+    volatilityAdjustment,
+    direction,
+    warnings,
+  };
+}
+
+/**
+ * Simple wrapper for exposure-adjusted multiplier
+ */
+export function calculateMultiplierWithExposure(
+  currentPrice: number,
+  targetPrice: number,
+  currentTime: number,
+  targetTime: number,
+  volatility: number = BASE_VOLATILITY
+): { multiplier: number; warnings: string[] } {
+  const result = calculateAdjustedMultiplier({
+    currentPrice,
+    targetPrice,
+    currentTime,
+    targetTime,
+    volatility,
+  });
+
+  return {
+    multiplier: result.multiplier,
+    warnings: result.warnings,
+  };
+}
+
+/**
+ * Integrate current market volatility into multiplier calculation
+ *
+ * Uses the risk management volatility calculation to dynamically
+ * adjust the volatility parameter.
+ */
+export function calculateMultiplierWithLiveVolatility(
+  currentPrice: number,
+  targetPrice: number,
+  currentTime: number,
+  targetTime: number
+): ExtendedMultiplierResult {
+  // Get live volatility from risk management
+  const liveVolatility = calculateVolatility();
+
+  // Use live volatility if available, otherwise use base
+  const effectiveVolatility = liveVolatility > 0 ? liveVolatility : BASE_VOLATILITY;
+
+  return calculateAdjustedMultiplier({
+    currentPrice,
+    targetPrice,
+    currentTime,
+    targetTime,
+    volatility: effectiveVolatility,
+  });
+}
+
+// ============================================
+// House Edge Verification
+// ============================================
+
+/**
+ * Verify the 20% house edge is correctly applied
+ *
+ * This function can be used for auditing/testing to ensure
+ * the math is correct.
+ *
+ * @param displayMultiplier - The multiplier shown to users
+ * @param trueProbability - The calculated true probability
+ * @returns Verification result
+ */
+export function verifyHouseEdgeApplication(
+  displayMultiplier: number,
+  trueProbability: number
+): {
+  valid: boolean;
+  fairMultiplier: number;
+  expectedDisplay: number;
+  actualDisplay: number;
+  houseEdge: number;
+  deviation: number;
+} {
+  const fairMultiplier = 1 / trueProbability;
+  const expectedDisplay = fairMultiplier * (1 - FEE_CONFIG.HOUSE_EDGE);
+  const deviation = Math.abs(displayMultiplier - expectedDisplay) / expectedDisplay;
+
+  return {
+    valid: deviation < 0.01, // Within 1% tolerance (due to rounding)
+    fairMultiplier: Math.round(fairMultiplier * 100) / 100,
+    expectedDisplay: Math.round(expectedDisplay * 100) / 100,
+    actualDisplay: displayMultiplier,
+    houseEdge: FEE_CONFIG.HOUSE_EDGE,
+    deviation: Math.round(deviation * 10000) / 10000,
+  };
+}
+
+/**
+ * Calculate expected platform revenue for a bet
+ *
+ * @param betAmount - Amount wagered
+ * @param multiplier - Display multiplier
+ * @param trueProbability - True probability of winning
+ * @returns Expected revenue breakdown
+ */
+export function calculateExpectedRevenue(
+  betAmount: number,
+  multiplier: number,
+  trueProbability: number
+): {
+  expectedHouseEdgeRevenue: number;
+  expectedPlatformFeeRevenue: number;
+  expectedLossRevenue: number;
+  totalExpectedRevenue: number;
+  userExpectedValue: number;
+} {
+  // House edge revenue (built into every bet)
+  const expectedHouseEdgeRevenue = betAmount * FEE_CONFIG.HOUSE_EDGE;
+
+  // Platform fee revenue (only on wins)
+  const winnings = (betAmount * multiplier) - betAmount;
+  const platformFeeOnWin = winnings * FEE_CONFIG.PLATFORM_FEE_RATE;
+  const expectedPlatformFeeRevenue = trueProbability * platformFeeOnWin;
+
+  // Loss revenue (when user loses)
+  const expectedLossRevenue = (1 - trueProbability) * betAmount;
+
+  // User's expected value (should be negative for house advantage)
+  const netWinnings = (betAmount * multiplier * (1 - FEE_CONFIG.PLATFORM_FEE_RATE)) - betAmount;
+  const userExpectedValue = trueProbability * netWinnings - (1 - trueProbability) * betAmount;
+
+  // Actual revenue is losses minus payouts
+  const expectedPayouts = trueProbability * betAmount * multiplier * (1 - FEE_CONFIG.PLATFORM_FEE_RATE);
+  const totalExpectedRevenue = betAmount - expectedPayouts + expectedPlatformFeeRevenue;
+
+  return {
+    expectedHouseEdgeRevenue: Math.round(expectedHouseEdgeRevenue * 100) / 100,
+    expectedPlatformFeeRevenue: Math.round(expectedPlatformFeeRevenue * 100) / 100,
+    expectedLossRevenue: Math.round(expectedLossRevenue * 100) / 100,
+    totalExpectedRevenue: Math.round(totalExpectedRevenue * 100) / 100,
+    userExpectedValue: Math.round(userExpectedValue * 100) / 100,
+  };
 }
 
 // ============================================

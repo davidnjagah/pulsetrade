@@ -4,6 +4,12 @@
  *
  * For demo/development: Uses in-memory Map storage
  * For production: Would integrate with Supabase database
+ *
+ * SPRINT 7 UPDATES:
+ * - Integrated risk management checks
+ * - Added resolution delay for front-running prevention
+ * - Revenue tracking on resolution
+ * - Event emission for monitoring
  */
 
 import {
@@ -17,10 +23,33 @@ import {
   BETTING_LIMITS,
   FEE_CONFIG,
 } from './types';
-import { calculateMultiplier, calculatePayout, resolveBet as resolveMultiplier } from './multiplierCalculator';
+import {
+  calculateMultiplier,
+  calculatePayout,
+  resolveBet as resolveMultiplier,
+  calculateAdjustedMultiplier,
+  calculateTrueProbability,
+} from './multiplierCalculator';
 import { validateBetRequest, BetValidationContext } from './betValidator';
 import { addBetNotification } from './chatService';
 import { updateUserLeaderboardStats } from './leaderboardService';
+
+// Risk management and monetization imports
+import {
+  performRiskCheck,
+  addExposure,
+  removeExposure,
+  recordPayout,
+  getBetDirection,
+  recordPriceUpdate,
+} from './riskManagement';
+import { recordBetRevenue } from './monetizationService';
+import {
+  checkExploitation,
+  recordBetActivity,
+  recordBetResolution,
+  calculateResolutionDelay,
+} from './antiExploitation';
 
 // ============================================
 // Types
@@ -39,6 +68,92 @@ export interface BetResolutionResult {
   payout: number;
   platformFee: number;
   newBalance: number;
+}
+
+// Event types for monitoring
+export type BetEventType = 'placed' | 'resolved' | 'expired' | 'risk_check_failed';
+
+export interface BetEvent {
+  type: BetEventType;
+  timestamp: number;
+  betId?: string;
+  userId: string;
+  data: Record<string, unknown>;
+}
+
+// Event listeners
+type BetEventListener = (event: BetEvent) => void;
+const eventListeners: BetEventListener[] = [];
+
+/**
+ * Emit bet event for monitoring
+ */
+function emitBetEvent(event: BetEvent): void {
+  const now = Date.now();
+  console.log(`[BetService] Event: ${event.type} at ${new Date(now).toISOString()}`, event.data);
+
+  eventListeners.forEach((listener) => {
+    try {
+      listener(event);
+    } catch (error) {
+      console.error('[BetService] Event listener error:', error);
+    }
+  });
+}
+
+/**
+ * Subscribe to bet events
+ */
+export function onBetEvent(listener: BetEventListener): () => void {
+  eventListeners.push(listener);
+  return () => {
+    const index = eventListeners.indexOf(listener);
+    if (index > -1) {
+      eventListeners.splice(index, 1);
+    }
+  };
+}
+
+// Response time tracking
+const responseTimeLog: Array<{ endpoint: string; duration: number; timestamp: number }> = [];
+
+/**
+ * Log response time for monitoring
+ */
+function logResponseTime(endpoint: string, startTime: number): void {
+  const duration = Date.now() - startTime;
+  responseTimeLog.push({ endpoint, duration, timestamp: Date.now() });
+
+  // Keep only last 1000 entries
+  if (responseTimeLog.length > 1000) {
+    responseTimeLog.shift();
+  }
+
+  if (duration > 100) {
+    console.warn(`[BetService] Slow response: ${endpoint} took ${duration}ms`);
+  }
+}
+
+/**
+ * Get average response times
+ */
+export function getResponseTimeStats(): {
+  averageMs: number;
+  maxMs: number;
+  minMs: number;
+  count: number;
+} {
+  if (responseTimeLog.length === 0) {
+    return { averageMs: 0, maxMs: 0, minMs: 0, count: 0 };
+  }
+
+  const durations = responseTimeLog.map((r) => r.duration);
+  return {
+    averageMs: Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
+    maxMs: Math.max(...durations),
+    minMs: Math.min(...durations),
+    count: responseTimeLog.length,
+  };
 }
 
 // ============================================
@@ -133,12 +248,19 @@ function generateBetId(): string {
 
 /**
  * Place a new bet
+ *
+ * SPRINT 7: Now includes:
+ * - Anti-exploitation checks
+ * - Risk management validation
+ * - Exposure tracking
+ * - Event emission for monitoring
  */
 export async function placeBet(
   userId: string,
   request: BetPlaceRequest,
   currentPrice?: number
 ): Promise<BetPlaceResponse> {
+  const startTime = Date.now();
   const user = getUser(userId);
   const now = Date.now();
 
@@ -153,6 +275,28 @@ export async function placeBet(
 
   // Get active bets count for this user
   const activeBets = getActiveBets(userId);
+
+  // SPRINT 7: Anti-exploitation check
+  const exploitCheck = checkExploitation(
+    userId,
+    request.amount,
+    effectiveCurrentPrice,
+    request.targetPrice
+  );
+
+  if (!exploitCheck.allowed) {
+    emitBetEvent({
+      type: 'risk_check_failed',
+      timestamp: now,
+      userId,
+      data: {
+        reason: exploitCheck.reason,
+        suspicionScore: exploitCheck.suspicionScore,
+        flags: exploitCheck.flags.map((f) => f.type),
+      },
+    });
+    throw new Error(exploitCheck.reason || 'Bet rejected due to suspicious activity');
+  }
 
   // Build validation context
   const context: BetValidationContext = {
@@ -173,15 +317,44 @@ export async function placeBet(
   // Parse target time
   const targetTimeMs = new Date(request.targetTime).getTime();
 
-  // Calculate multiplier
-  const multiplier = validation.calculatedMultiplier || calculateMultiplier(
+  // SPRINT 7: Calculate multiplier with exposure adjustment
+  const multiplierResult = calculateAdjustedMultiplier({
+    currentPrice: effectiveCurrentPrice,
+    targetPrice: request.targetPrice,
+    currentTime: now,
+    targetTime: targetTimeMs,
+    volatility: 0.02, // Default volatility
+  });
+
+  const multiplier = multiplierResult.multiplier;
+  const potentialPayout = request.amount * multiplier;
+
+  // SPRINT 7: Perform comprehensive risk check
+  const riskCheck = performRiskCheck(
+    userId,
+    request.amount,
+    multiplier,
     effectiveCurrentPrice,
     request.targetPrice,
-    now,
-    targetTimeMs
+    activeBets.bets
   );
 
-  const potentialPayout = validation.potentialPayout || (request.amount * multiplier);
+  if (!riskCheck.allowed) {
+    emitBetEvent({
+      type: 'risk_check_failed',
+      timestamp: now,
+      userId,
+      data: {
+        reason: riskCheck.reason,
+        warnings: riskCheck.warnings,
+      },
+    });
+    throw new Error(riskCheck.reason || 'Bet rejected by risk management');
+  }
+
+  // Use adjusted multiplier from risk check if different
+  const finalMultiplier = riskCheck.adjustedMultiplier || multiplier;
+  const finalPotentialPayout = request.amount * finalMultiplier;
 
   // Create the bet
   const betId = generateBetId();
@@ -191,7 +364,7 @@ export async function placeBet(
     amount: request.amount,
     targetPrice: request.targetPrice,
     targetTime: new Date(request.targetTime),
-    multiplier,
+    multiplier: finalMultiplier,
     placedAt: new Date(now),
     resolvedAt: null,
     status: 'active',
@@ -209,6 +382,20 @@ export async function placeBet(
   // Store the bet
   betsStore.set(betId, bet);
 
+  // SPRINT 7: Track exposure in risk management
+  const direction = getBetDirection(effectiveCurrentPrice, request.targetPrice);
+  addExposure(betId, direction, request.amount, finalPotentialPayout);
+
+  // SPRINT 7: Record bet activity for anti-exploitation
+  recordBetActivity(userId, {
+    betId,
+    timestamp: now,
+    amount: request.amount,
+    multiplier: finalMultiplier,
+    targetPrice: request.targetPrice,
+    currentPrice: effectiveCurrentPrice,
+  });
+
   // Set up auto-resolution timer
   scheduleResolution(bet);
 
@@ -217,12 +404,31 @@ export async function placeBet(
     addBetNotification(userId, {
       notificationType: 'placed',
       amount: request.amount,
-      multiplier,
+      multiplier: finalMultiplier,
       targetPrice: request.targetPrice,
     });
   } catch (error) {
     console.error('[BetService] Failed to emit bet notification:', error);
   }
+
+  // SPRINT 7: Emit bet placed event
+  emitBetEvent({
+    type: 'placed',
+    timestamp: now,
+    betId,
+    userId,
+    data: {
+      amount: request.amount,
+      multiplier: finalMultiplier,
+      targetPrice: request.targetPrice,
+      potentialPayout: finalPotentialPayout,
+      direction,
+      warnings: [...(riskCheck.warnings || []), ...(multiplierResult.warnings || [])],
+    },
+  });
+
+  // Log response time
+  logResponseTime('placeBet', startTime);
 
   // Return response
   return {
@@ -230,11 +436,11 @@ export async function placeBet(
     amount: request.amount,
     targetPrice: request.targetPrice,
     targetTime: request.targetTime,
-    multiplier,
+    multiplier: finalMultiplier,
     priceAtPlacement: request.priceAtPlacement,
     placedAt: bet.placedAt.toISOString(),
     status: 'active',
-    potentialPayout: Math.round(potentialPayout * 100) / 100,
+    potentialPayout: Math.round(finalPotentialPayout * 100) / 100,
   };
 }
 
@@ -244,6 +450,8 @@ export async function placeBet(
 
 /**
  * Schedule automatic bet resolution
+ *
+ * SPRINT 7: Uses anti-exploitation delay for front-running prevention
  */
 function scheduleResolution(bet: Bet): void {
   const targetTime = bet.targetTime.getTime();
@@ -255,8 +463,8 @@ function scheduleResolution(bet: Bet): void {
     return;
   }
 
-  // Add small random delay to prevent front-running (100-500ms)
-  const randomDelay = Math.floor(Math.random() * 400) + 100;
+  // SPRINT 7: Get user-specific random delay for front-running prevention
+  const antiExploitDelay = calculateResolutionDelay(bet.userId);
 
   const timer = setTimeout(async () => {
     try {
@@ -267,7 +475,7 @@ function scheduleResolution(bet: Bet): void {
     } catch (error) {
       console.error(`Failed to auto-resolve bet ${bet.id}:`, error);
     }
-  }, delay + randomDelay);
+  }, delay + antiExploitDelay);
 
   betTimers.set(bet.id, timer);
 }
@@ -298,8 +506,15 @@ function getMockResolutionPrice(bet: Bet): number {
 
 /**
  * Internal bet resolution
+ *
+ * SPRINT 7: Now includes:
+ * - Revenue tracking
+ * - Exposure cleanup
+ * - Anti-exploitation recording
+ * - Event emission
  */
 async function resolveBetInternal(betId: string, actualPrice: number): Promise<BetResolutionResult> {
+  const startTime = Date.now();
   const bet = betsStore.get(betId);
 
   if (!bet) {
@@ -340,7 +555,33 @@ async function resolveBetInternal(betId: string, actualPrice: number): Promise<B
     newBalance = addToBalance(bet.userId, resolution.payout).balance;
     user.dailyPayoutTotal += resolution.payout;
     usersStore.set(bet.userId, user);
+
+    // SPRINT 7: Track payout for daily limits
+    recordPayout(bet.userId, resolution.payout);
   }
+
+  // SPRINT 7: Remove exposure from risk management
+  const direction = getBetDirection(bet.priceAtPlacement, bet.targetPrice);
+  const potentialPayout = bet.amount * bet.multiplier;
+  removeExposure(betId, direction, bet.amount, potentialPayout);
+
+  // SPRINT 7: Calculate true probability for revenue tracking
+  const priceDistance = Math.abs(bet.targetPrice - bet.priceAtPlacement) / bet.priceAtPlacement;
+  const timeMinutes = (bet.targetTime.getTime() - bet.placedAt.getTime()) / 1000 / 60;
+  const trueProbability = calculateTrueProbability(priceDistance, timeMinutes);
+
+  // SPRINT 7: Record revenue from this bet
+  recordBetRevenue(
+    betId,
+    bet.userId,
+    bet.amount,
+    bet.multiplier,
+    resolution.won,
+    trueProbability
+  );
+
+  // SPRINT 7: Record resolution in anti-exploitation
+  recordBetResolution(bet.userId, betId, resolution.won, resolution.payout);
 
   const result: BetResolutionResult = {
     bet,
@@ -381,6 +622,23 @@ async function resolveBetInternal(betId: string, actualPrice: number): Promise<B
     console.error('[BetService] Failed to update leaderboard stats:', error);
   }
 
+  // SPRINT 7: Emit resolution event
+  emitBetEvent({
+    type: 'resolved',
+    timestamp: Date.now(),
+    betId,
+    userId: bet.userId,
+    data: {
+      won: resolution.won,
+      payout: resolution.payout,
+      platformFee: resolution.platformFee,
+      actualPrice,
+      targetPrice: bet.targetPrice,
+      amount: bet.amount,
+      multiplier: bet.multiplier,
+    },
+  });
+
   // Notify callbacks
   resolutionCallbacks.forEach((callback) => {
     try {
@@ -389,6 +647,9 @@ async function resolveBetInternal(betId: string, actualPrice: number): Promise<B
       console.error('Resolution callback error:', error);
     }
   });
+
+  // Log response time
+  logResponseTime('resolveBet', startTime);
 
   return result;
 }
