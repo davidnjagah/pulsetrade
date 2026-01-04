@@ -12,9 +12,11 @@ import { ToastProvider, useToast } from "@/components/ui/Toast";
 import Balance from "@/components/ui/Balance";
 import { useBets } from "@/hooks/useBets";
 import { useAuthContext } from "@/context/AuthContext";
+import { useChatContext } from "@/context/ChatContext";
 import DemoModeBanner from "@/components/auth/DemoModeBanner";
 import WalletConnect from "@/components/auth/WalletConnect";
-import { MessageCircle, X, Wallet, Lock, Sparkles } from "lucide-react";
+import { ChatPanel, ChatToggleButton } from "@/components/chat";
+import { X, Wallet, Lock, Sparkles } from "lucide-react";
 
 // Connect prompt component for unauthenticated users
 function ConnectPrompt() {
@@ -98,7 +100,6 @@ function LockedGridOverlay() {
 // Main content component that uses toast context
 function TradingContent() {
   const [activeNavItem, setActiveNavItem] = useState("trade");
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedBetAmount, setSelectedBetAmount] = useState(5);
   const [currentPrice] = useState(97500);
@@ -111,6 +112,9 @@ function TradingContent() {
     getDemoBalance,
     updateDemoBalance,
   } = useAuthContext();
+
+  // Chat context - for bet notifications
+  const { addBetNotification } = useChatContext();
 
   // Toast notifications
   const { showWin, showLoss } = useToast();
@@ -141,9 +145,13 @@ function TradingContent() {
       winAnimation.triggerWin({ x: 50, y: 50 }, payout);
       // Show toast notification
       showWin(payout, `Your ${bet.multiplier.toFixed(1)}x bet paid off!`);
+      // Add bet notification to chat
+      addBetNotification(bet.amount, bet.multiplier, "won", payout);
     },
     onLoss: (bet) => {
       showLoss(bet.amount, "Price didn't reach your target.");
+      // Add bet notification to chat
+      addBetNotification(bet.amount, bet.multiplier, "lost");
     },
     mockResolution: true,
   });
@@ -181,12 +189,15 @@ function TradingContent() {
         cell.id
       );
 
-      if (!bet) {
+      if (bet) {
+        // Add bet notification to chat when bet is placed
+        addBetNotification(bet.amount, bet.multiplier, "placed");
+      } else {
         // Could show an error toast here
         console.log("Failed to place bet - insufficient balance");
       }
     },
-    [selectedBetAmount, placeBet, isConnected]
+    [selectedBetAmount, placeBet, isConnected, addBetNotification]
   );
 
   return (
@@ -307,105 +318,10 @@ function TradingContent() {
           </div>
 
           {/* Chat panel toggle button (mobile) */}
-          <button
-            onClick={() => setIsChatOpen(!isChatOpen)}
-            className="fixed bottom-4 right-4 z-50 lg:hidden p-3 rounded-full bg-pulse-pink shadow-pulse-glow tap-target"
-            aria-label="Toggle chat"
-          >
-            {isChatOpen ? (
-              <X className="w-6 h-6 text-white" />
-            ) : (
-              <MessageCircle className="w-6 h-6 text-white" />
-            )}
-          </button>
+          <ChatToggleButton />
 
-          {/* Chat panel placeholder */}
-          <aside
-            className={`
-              fixed lg:relative right-0 top-14 bottom-0 w-72 lg:w-64
-              bg-pulse-bg/95 backdrop-blur-md border-l border-pulse-pink/10
-              transform transition-transform duration-300 ease-in-out z-40
-              ${isChatOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"}
-            `}
-          >
-            <div className="h-full flex flex-col">
-              {/* Chat header */}
-              <div className="p-4 border-b border-pulse-pink/10">
-                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <MessageCircle className="w-4 h-4 text-pulse-pink" />
-                  Live Chat
-                </h2>
-              </div>
-
-              {/* Recent bets feed */}
-              <div className="p-3 border-b border-pulse-pink/10 bg-pulse-bg-secondary/30">
-                <h3 className="text-xs font-semibold text-pulse-text-secondary mb-2">
-                  Recent Bets
-                </h3>
-                <div className="space-y-2">
-                  {isConnected && activeBets.slice(0, 3).map((bet) => (
-                    <div
-                      key={bet.id}
-                      className="flex items-center justify-between text-xs"
-                    >
-                      <span className="text-white">${bet.amount} bet</span>
-                      <span className="text-pulse-yellow">
-                        {bet.multiplier.toFixed(1)}x
-                      </span>
-                    </div>
-                  ))}
-                  {(!isConnected || activeBets.length === 0) && (
-                    <p className="text-xs text-pulse-text-secondary">
-                      {isConnected ? "No active bets" : "Connect to see your bets"}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Chat messages placeholder */}
-              <div className="flex-1 p-4 overflow-y-auto">
-                <div className="space-y-4">
-                  {/* Placeholder messages */}
-                  {[
-                    { user: "Trader1", message: "SOL looking bullish!", color: "#ff69b4" },
-                    { user: "CryptoKing", message: "Just won 2x on that dip!", color: "#e6ff00" },
-                    { user: "WhaleAlert", message: "Big buy incoming...", color: "#ff1493" },
-                  ].map((msg, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-pulse-bg"
-                        style={{ background: msg.color }}
-                      >
-                        {msg.user[0]}
-                      </div>
-                      <div className="flex-1">
-                        <span className="text-xs text-pulse-text-secondary">{msg.user}</span>
-                        <p className="text-sm text-white">{msg.message}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Chat input placeholder */}
-              <div className="p-4 border-t border-pulse-pink/10">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder={isConnected ? "Type a message..." : "Connect to chat..."}
-                    disabled={!isConnected}
-                    className="flex-1 px-3 py-2 text-sm bg-pulse-bg-secondary/80 border border-pulse-pink/20 rounded-lg text-white placeholder:text-pulse-text-secondary focus:outline-none focus:border-pulse-pink/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                  <button
-                    disabled={!isConnected}
-                    className="p-2 rounded-lg bg-pulse-pink hover:bg-pulse-pink-deep transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <MessageCircle className="w-4 h-4 text-white" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </aside>
+          {/* Chat panel - real-time chat with bet notifications */}
+          <ChatPanel />
         </div>
       </main>
 

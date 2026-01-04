@@ -19,6 +19,7 @@ import {
 } from './types';
 import { calculateMultiplier, calculatePayout, resolveBet as resolveMultiplier } from './multiplierCalculator';
 import { validateBetRequest, BetValidationContext } from './betValidator';
+import { addBetNotification } from './chatService';
 
 // ============================================
 // Types
@@ -210,6 +211,18 @@ export async function placeBet(
   // Set up auto-resolution timer
   scheduleResolution(bet);
 
+  // Emit bet placed notification to chat
+  try {
+    addBetNotification(userId, {
+      notificationType: 'placed',
+      amount: request.amount,
+      multiplier,
+      targetPrice: request.targetPrice,
+    });
+  } catch (error) {
+    console.error('[BetService] Failed to emit bet notification:', error);
+  }
+
   // Return response
   return {
     id: betId,
@@ -335,6 +348,19 @@ async function resolveBetInternal(betId: string, actualPrice: number): Promise<B
     platformFee: resolution.platformFee,
     newBalance,
   };
+
+  // Emit bet resolution notification to chat
+  try {
+    addBetNotification(bet.userId, {
+      notificationType: resolution.won ? 'won' : 'lost',
+      amount: bet.amount,
+      multiplier: bet.multiplier,
+      payout: resolution.won ? resolution.payout : undefined,
+      targetPrice: bet.targetPrice,
+    });
+  } catch (error) {
+    console.error('[BetService] Failed to emit resolution notification:', error);
+  }
 
   // Notify callbacks
   resolutionCallbacks.forEach((callback) => {

@@ -749,3 +749,305 @@ Implement user accounts with wallet connection and balance tracking.
 - **GitHub Tag**: (pending commit)
 
 ---
+
+## [January 4, 2026] - Sprint 4 Day 1
+
+### Sprint 4 Goals
+Add real-time chat and social bet visibility.
+
+### UI Designer (Claude Code - Frontend)
+- **Tasks Completed:**
+  - Created `components/chat/ChatMessage.tsx` - Message bubble component
+    - User avatar display (24px, using SimpleAvatar)
+    - Username in accent color (#ff69b4 for others, #ff1493 for own)
+    - Message text in white with word wrap
+    - Relative timestamp display ("2m ago", "1h ago", "just now")
+    - Different styling for own messages (right-aligned, pink background)
+    - Framer Motion animations for smooth entry
+    - Memoized component to prevent unnecessary re-renders
+  - Created `components/chat/BetNotification.tsx` - Special bet event message
+    - Three notification types: "placed", "won", "lost"
+    - Yellow/gold styling for placed bets (#e6ff00 accent)
+    - Green styling for wins, red for losses
+    - Compact inline format with Zap/TrendingUp/TrendingDown icons
+    - Shows: "[User] placed $X bet at [multiplier]x" format
+    - BetNotificationInline export for chat feed use
+    - Framer Motion animations for entry
+  - Created `components/chat/ChatInput.tsx` - Text input component
+    - Text input with "Type a message..." placeholder
+    - Send button with paper plane (Send) icon
+    - 200 character limit with visual counter
+    - Disabled state when not authenticated (shows Lock icon)
+    - Enter key to send functionality
+    - Loading state support with spinner
+    - Focus glow effect matching design system
+    - Helper text for disabled state
+  - Created `hooks/useChat.ts` - Chat state management hook
+    - messages array state management
+    - sendMessage(text) function with auth check
+    - addBetNotification(amount, multiplier, type, payout) function
+    - Mock messages generator with 8 initial messages
+    - 7 mock user profiles with usernames and wallet addresses
+    - 15 mock chat message variations
+    - Auto-scroll to bottom on new message using scrollRef
+    - Simulated real-time updates every 8 seconds
+    - 40% chance of bet notification, 60% chat message
+    - Online user count simulation (fluctuates 20-100)
+    - Keeps last 50 items to prevent memory bloat
+  - Created `context/ChatContext.tsx` - Chat context provider
+    - ChatProvider wrapper component
+    - useChatContext() hook for consuming chat state
+    - isChatOpen state for mobile panel toggle
+    - toggleChat(), openChat(), closeChat() methods
+    - Auth-aware sendMessage and addBetNotification
+    - Auto-scroll when chat opens
+    - Full TypeScript types for ChatContextType
+  - Created `components/chat/ChatPanel.tsx` - Right sidebar panel
+    - Fixed 280px width on desktop
+    - Semi-transparent dark background with blur
+    - Header with "Live Chat" title and online user count (green indicator)
+    - Recent Activity section showing latest bet notifications
+    - Scrollable message area with custom scrollbar
+    - Collapsible slide-in panel on mobile with backdrop
+    - Close button for mobile panel
+    - Loading state with spinner
+    - Empty state with icon and helper text
+    - ChatToggleButton export for mobile FAB
+  - Created `components/chat/index.ts` - Barrel export file
+    - Exports all chat components and types
+  - Updated `app/page.tsx` - Full chat integration
+    - Replaced placeholder chat with ChatPanel component
+    - Replaced mobile toggle with ChatToggleButton
+    - Integrated useChatContext for bet notifications
+    - Bet placement triggers "placed" notification in chat
+    - Win resolution triggers "won" notification in chat
+    - Loss resolution triggers "lost" notification in chat
+    - Removed isChatOpen local state (now in ChatContext)
+  - Updated `app/layout.tsx` - ChatProvider wrapper
+    - Added ChatProvider inside AuthProvider
+    - Chat state now available app-wide
+- **Files Created:**
+  - `components/chat/ChatMessage.tsx` (98 lines) - Message bubble component
+  - `components/chat/BetNotification.tsx` (148 lines) - Bet event notification
+  - `components/chat/ChatInput.tsx` (128 lines) - Chat text input
+  - `components/chat/ChatPanel.tsx` (220 lines) - Full chat panel
+  - `components/chat/index.ts` (6 lines) - Barrel exports
+  - `hooks/useChat.ts` (210 lines) - Chat state management hook
+  - `context/ChatContext.tsx` (105 lines) - Chat context provider
+- **Files Modified:**
+  - `app/page.tsx` - Chat integration, bet notifications
+  - `app/layout.tsx` - ChatProvider wrapper
+- **Decisions Made:**
+  - Mock chat updates every 8 seconds for demo
+  - 40% bet notifications, 60% chat messages in mock stream
+  - 50 message limit to prevent memory issues
+  - Chat panel width: 280px (increased from spec's 264px for readability)
+  - Mobile panel slides in from right with backdrop
+  - Online count fluctuates between 20-100 for realism
+  - Bet notifications appear in both Recent Activity and main chat feed
+- **Testing:**
+  - npm run build: PASS (all components compile)
+  - TypeScript type checking: PASS
+  - All chat components render correctly
+  - Mock messages display on load
+  - Real-time updates working (8 second interval)
+  - Bet notifications appear when bets placed/resolved
+  - Mobile toggle button works correctly
+- **Blockers:**
+  - None
+
+### Definition of Done - Sprint 4 UI Tasks
+- [x] Build `ChatPanel.tsx` right sidebar (280px width, collapsible mobile)
+- [x] Create message bubble components (`ChatMessage.tsx`)
+- [x] Display user avatars in chat (using SimpleAvatar)
+- [x] Show bet notifications in chat feed (`BetNotification.tsx`)
+- [x] Add chat input with send button (`ChatInput.tsx`)
+- [x] Create chat state management (`hooks/useChat.ts`)
+- [x] Create chat context (`context/ChatContext.tsx`)
+- [x] Integrate ChatPanel in main page
+- [x] Add bet notifications when bets are placed/resolved
+- [x] Add mock chat data for demo (8 initial + real-time updates)
+
+---
+
+### Backend Engineer (Claude Code - Backend) - Sprint 4
+- **Tasks Completed:**
+  - Updated `lib/types.ts` - Added chat-related types
+    - ChatMessageType = 'message' | 'bet_notification'
+    - BetNotification interface with notificationType, amount, multiplier, payout
+    - ChatItem union type (ChatMessage | BetNotification)
+    - SendMessageResponse interface
+    - ChatMessagesResponse with hasMore pagination flag
+    - ChatStreamEvent for SSE events
+  - Created `lib/chatBroadcaster.ts` - Event emitter for real-time updates
+    - subscribe(callback) - Subscribe to chat events, returns unsubscribe function
+    - broadcast(item) - Broadcast message/notification to all subscribers
+    - broadcastEvent(event) - Broadcast raw ChatStreamEvent
+    - broadcastHeartbeat() - Send keep-alive to all subscribers
+    - sendConnectedEvent(callback) - Send initial connection event
+    - getSubscriberCount() - Get number of active subscribers
+    - Automatic heartbeat timer (30 second interval)
+    - Error handling removes failed subscribers automatically
+  - Created `lib/chatService.ts` - Chat message storage and management
+    - In-memory message storage (max 100 messages)
+    - addMessage(userId, text) - Add chat message with validation
+    - getMessages(limit, before) - Get messages with cursor pagination
+    - addBetNotification(userId, betData) - Add bet placed/won/lost notification
+    - validateMessage() - Message validation (max 200 chars)
+    - checkRateLimit() - Rate limiting (1 message per 2 seconds per user)
+    - getRecentBetNotifications() - Get only bet notifications
+    - getChatStats() - Get chat statistics
+    - seedChatWithSampleMessages() - Seed sample data for demo
+  - Created `app/api/chat/messages/route.ts` - GET endpoint
+    - Public endpoint (no auth required)
+    - Query params: limit (default 50, max 100), before (cursor)
+    - mode=notifications - Return only bet notifications
+    - mode=stats - Return chat statistics
+    - mode=seed - Seed sample data for demo
+    - Returns messages array with cursor pagination
+    - CORS headers for cross-origin requests
+  - Created `app/api/chat/send/route.ts` - POST endpoint
+    - Requires authentication (401 without auth)
+    - Input validation: message required, max 200 chars
+    - Rate limiting: 1 message per 2 seconds (429 on violation)
+    - Returns created ChatMessage on success
+    - Broadcasts message to SSE subscribers
+  - Created `app/api/chat/stream/route.ts` - SSE endpoint
+    - Server-Sent Events for real-time updates
+    - Sends 'connected' event on connection
+    - Streams new messages and bet notifications
+    - Heartbeat every 30 seconds (keep-alive)
+    - Automatic cleanup on client disconnect
+    - CORS headers for cross-origin access
+  - Updated `lib/betService.ts` - Bet notification integration
+    - Import addBetNotification from chatService
+    - Emit 'placed' notification when bet is placed
+    - Emit 'won' or 'lost' notification when bet is resolved
+    - Error handling to prevent notification failures from blocking bets
+- **Files Created:**
+  - `lib/chatBroadcaster.ts` (215 lines) - Event emitter for real-time chat
+  - `lib/chatService.ts` (380 lines) - Chat storage and management
+  - `app/api/chat/messages/route.ts` (95 lines) - GET messages endpoint
+  - `app/api/chat/send/route.ts` (140 lines) - POST send message endpoint
+  - `app/api/chat/stream/route.ts` (85 lines) - SSE stream endpoint
+- **Files Modified:**
+  - `lib/types.ts` - Added 55+ lines of chat types
+  - `lib/betService.ts` - Added bet notification integration (20 lines)
+- **API Changes:**
+  - Added `GET /api/chat/messages` - Get recent messages (public)
+  - Added `GET /api/chat/messages?mode=notifications` - Get bet notifications only
+  - Added `GET /api/chat/messages?mode=stats` - Get chat statistics
+  - Added `GET /api/chat/messages?mode=seed` - Seed sample data
+  - Added `POST /api/chat/send` - Send message (authenticated)
+  - Added `GET /api/chat/stream` - SSE real-time stream (public)
+- **Architecture Decisions:**
+  - In-memory storage with 100 message limit (production would use Supabase)
+  - 2 second rate limit per user to prevent spam
+  - 200 character message limit
+  - SSE instead of WebSocket for Next.js compatibility
+  - Bet notifications automatically broadcast to chat when bets placed/resolved
+  - Heartbeat every 30 seconds to keep SSE connections alive
+- **Testing Results:**
+  - npm run build: PASS (all 12 routes compile)
+  - GET /api/chat/messages: PASS (returns messages array)
+  - GET /api/chat/messages?mode=seed: PASS (seeds 12 sample items)
+  - GET /api/chat/messages?mode=notifications: PASS (returns 4 notifications)
+  - POST /api/chat/send (no auth): PASS (returns 401 UNAUTHORIZED)
+  - GET /api/chat/stream: PASS (returns SSE 'connected' event)
+  - TypeScript compilation: PASS
+- **Known Limitations:**
+  - In-memory storage resets on server restart (expected for demo)
+  - Sessions may not persist between requests in dev mode due to hot reloading
+  - Production would need Redis/PostgreSQL for message storage
+- **Blockers:**
+  - None
+
+### Definition of Done - Sprint 4 Backend Tasks
+- [x] Update lib/types.ts with ChatMessage, BetNotification, SendMessageResponse types
+- [x] Create lib/chatBroadcaster.ts with subscribe/broadcast/heartbeat
+- [x] Create lib/chatService.ts with message storage and rate limiting
+- [x] Create GET /api/chat/messages endpoint (public, paginated)
+- [x] Create POST /api/chat/send endpoint (authenticated, rate-limited)
+- [x] Create GET /api/chat/stream SSE endpoint (real-time updates)
+- [x] Update lib/betService.ts to emit bet notifications
+- [x] All APIs tested via curl
+- [x] npm run build passes
+
+---
+
+### QA Tester (Claude Code - QA) - Sprint 4 Verification
+- **Tests Run:**
+  - Build compilation test (npm run build) - PASS (14 routes compile)
+  - TypeScript type checking (npx tsc --noEmit) - PASS
+  - Development server test (npm run dev) - PASS
+  - Chat Messages API (GET /api/chat/messages) - PASS
+  - Chat Messages mode=seed API - PASS (seeds 12 sample items)
+  - Chat Messages mode=notifications API - PASS (returns only bet notifications)
+  - Chat Messages mode=stats API - PASS (returns statistics)
+  - Chat Send API without auth - PASS (returns 401)
+  - Chat Send API with auth - PASS (sends message)
+  - Validation: Empty message - PASS (returns MISSING_MESSAGE)
+  - Validation: Message > 200 chars - PASS (returns MESSAGE_TOO_LONG)
+  - Rate limiting (2 second cooldown) - PASS (returns RATE_LIMITED)
+  - Component file verification (8 files) - PASS
+  - Automated test suite (tests/chat-test.mjs) - 11/11 tests PASS
+- **Tests Passed:** 14/14 automated tests
+- **Bugs Found:**
+  - None critical
+- **Files Verified:**
+  - components/chat/ChatPanel.tsx (220 lines) - Full chat panel component
+  - components/chat/ChatMessage.tsx (98 lines) - Message bubble component
+  - components/chat/BetNotification.tsx (148 lines) - Bet event notification
+  - components/chat/ChatInput.tsx (128 lines) - Chat text input
+  - hooks/useChat.ts (210 lines) - Chat state management hook
+  - context/ChatContext.tsx (105 lines) - Chat context provider
+  - lib/chatService.ts (484 lines) - Chat storage and management
+  - lib/chatBroadcaster.ts (215 lines) - Event emitter for real-time chat
+- **Test File Created:**
+  - tests/chat-test.mjs - Chat API integration tests (11 tests)
+- **Key Findings:**
+  - All chat API endpoints working correctly
+  - Messages endpoint returns proper JSON with messages array and hasMore flag
+  - Seed endpoint creates 12 sample items (8 messages + 4 notifications)
+  - Notifications mode correctly filters to bet_notification type only
+  - Stats mode returns totalMessages, totalNotifications, totalItems, activeUsers
+  - Send endpoint requires authentication (returns 401 without auth)
+  - Message validation correctly enforces:
+    - Non-empty messages (MISSING_MESSAGE error)
+    - Maximum 200 characters (MESSAGE_TOO_LONG error with details)
+  - Rate limiting enforces 2 second cooldown between messages (RATE_LIMITED error)
+  - Bet notifications include notificationType (placed/won/lost), amount, multiplier
+  - Won notifications include payout field
+  - All messages/notifications include id, userId, username, type, createdAt
+- **Known Limitations (Development Mode):**
+  - In-memory session storage may not persist between API routes due to Next.js hot reloading
+  - Sessions reset on server restart (expected for demo)
+  - Production deployment would need Redis/PostgreSQL for session and message storage
+- **Recommendations:**
+  - Manual browser testing needed for UI components (chat panel, message bubbles, animations)
+  - SSE streaming (/api/chat/stream) works but requires browser testing for real-time updates
+  - Consider testing chat integration with bet placement for notification flow
+  - Cross-browser testing recommended before production
+- **Blockers:**
+  - None
+
+### Definition of Done - Sprint 4 QA Tasks
+- [x] npm run build compiles successfully
+- [x] npx tsc --noEmit passes
+- [x] All chat API endpoints tested (messages, send)
+- [x] Validation error responses verified (empty message, too long)
+- [x] Rate limiting verified (2 second cooldown)
+- [x] Component files verified (8 files)
+- [x] Automated test suite created (tests/chat-test.mjs) - 11/11 tests
+- [x] qa-checklist.md updated with Sprint 4 results
+- [x] DAILY_LOG.md updated with QA findings
+
+---
+
+## Version Checkpoint
+- **Version**: v0.4.1
+- **Date**: January 4, 2026
+- **State**: Sprint 4 complete - Chat UI + Chat APIs + QA Verified
+- **GitHub Tag**: (pending commit)
+
+---

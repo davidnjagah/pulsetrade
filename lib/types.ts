@@ -123,22 +123,53 @@ export type PriceMessage = PriceUpdate | PriceSubscription | PriceUnsubscription
 // Chat Types
 // ============================================
 
+export type ChatMessageType = 'message' | 'bet_notification';
+
 export interface ChatMessage {
   id: string;
   userId: string;
   username: string;
   avatarUrl: string | null;
   message: string;
+  type: ChatMessageType;
   createdAt: Date;
 }
+
+export interface BetNotification {
+  id: string;
+  userId: string;
+  username: string;
+  avatarUrl: string | null;
+  type: 'bet_notification';
+  notificationType: 'placed' | 'won' | 'lost';
+  amount: number;
+  multiplier: number;
+  payout?: number;
+  targetPrice?: number;
+  createdAt: Date;
+}
+
+export type ChatItem = ChatMessage | BetNotification;
 
 export interface ChatSendRequest {
   message: string;
 }
 
+export interface SendMessageResponse {
+  success: boolean;
+  message: ChatMessage;
+}
+
 export interface ChatMessagesResponse {
-  messages: ChatMessage[];
+  messages: ChatItem[];
   cursor?: string;
+  hasMore: boolean;
+}
+
+export interface ChatStreamEvent {
+  type: 'message' | 'bet_notification' | 'heartbeat' | 'connected';
+  data?: ChatItem;
+  timestamp: number;
 }
 
 // ============================================
