@@ -299,22 +299,90 @@
 
 ---
 
-## Sprint 5: Leaderboard
+## Sprint 5: Leaderboard & Profile
 
-### Leaderboard Tests
+### QA Session: January 4, 2026 - Sprint 5 API Testing
+
+#### Build & Compilation Tests
+- [x] npm run build compiles successfully (20 routes compile)
+- [x] No TypeScript errors (npx tsc --noEmit passes)
+- [x] Development server starts correctly
+- [x] All leaderboard/profile API routes accessible
+
+#### Component File Verification
+- [x] app/leaderboard/page.tsx exists (165 lines)
+- [x] app/profile/page.tsx exists (331 lines)
+- [x] components/leaderboard/LeaderboardTable.tsx exists (267 lines)
+- [x] components/leaderboard/RankBadge.tsx exists (131 lines)
+- [x] components/profile/StatsCard.tsx exists (144 lines)
+- [x] components/profile/BetHistory.tsx exists (239 lines)
+- [x] hooks/useLeaderboard.ts exists (181 lines)
+- [x] hooks/useProfile.ts exists (242 lines)
+- [x] lib/leaderboardService.ts exists (510 lines)
+- [x] lib/profileService.ts exists (456 lines)
+
+#### Leaderboard API Tests
+- [x] GET /api/leaderboard returns leaderboard array with period, totalUsers, generatedAt
+- [x] GET /api/leaderboard?period=daily returns daily rankings (25 mock users)
+- [x] GET /api/leaderboard?period=weekly returns weekly rankings (50 mock users)
+- [x] GET /api/leaderboard?period=alltime returns all-time rankings (100 mock users)
+- [x] GET /api/leaderboard?limit=5 limits entries to 5
+- [x] GET /api/leaderboard?limit=10 limits entries to 10
+- [x] Leaderboard entries have: rank, userId, username, wins, losses, profit, winRate, totalBets, streak
+- [x] Entries are sorted by profit (highest first)
+- [x] userRank field included when authenticated
+
+#### Profile API Tests
+- [x] GET /api/profile without auth returns 401 UNAUTHORIZED
+- [x] GET /api/profile with auth returns profile with stats
+- [x] Profile includes: id, walletAddress, username, balance, isDemo, stats
+- [x] Stats include: totalBets, wins, losses, winRate, profit, biggestWin, currentStreak, longestWinStreak
+
+#### Profile Stats API Tests
+- [x] GET /api/profile/stats without auth returns 401 UNAUTHORIZED
+- [x] GET /api/profile/stats with auth returns detailed stats
+- [x] Stats include profitByPeriod (daily, weekly, monthly)
+- [x] Returns rank for all periods (daily, weekly, alltime)
+- [x] Returns bestBet and worstBet (null for new users)
+
+#### Profile History API Tests
+- [x] GET /api/profile/history without auth returns 401 UNAUTHORIZED
+- [x] GET /api/profile/history with auth returns paginated bet history
+- [x] History response has: history, total, limit, offset, hasMore
+- [x] History response has summary: totalOnPage, winsOnPage, lossesOnPage, profitOnPage
+- [x] Pagination works: limit=5&offset=0 returns correct response
+
+#### Automated Test Suite (tests/leaderboard-test.mjs)
+- [x] 62/62 tests passing
+- [x] Leaderboard period tests (3 tests - daily/weekly/alltime)
+- [x] Leaderboard limit tests (2 tests)
+- [x] Leaderboard entry structure tests (7 tests)
+- [x] Profile auth tests (2 tests - 401 without auth, 200 with auth)
+- [x] Profile structure tests (11 tests)
+- [x] Profile stats tests (8 tests)
+- [x] Profile history tests (7 tests)
+- [x] Pagination tests (4 tests)
+
+### Leaderboard Tests (UI - Requires Manual Testing)
 - [ ] Leaderboard page loads
 - [ ] Rankings display correctly
-- [ ] Top users shown first
+- [ ] Top users shown first (profit-based ranking)
 - [ ] Wins/losses accurate
 - [ ] Profit calculated correctly
 - [ ] User avatars display
 - [ ] Updates after bet resolution
-- [ ] Period filter works (daily/weekly/all)
+- [x] Period filter works (daily/weekly/all) - verified via API
 
-### Profile Tests
+### Profile Tests (UI - Requires Manual Testing)
 - [ ] Profile page loads
 - [ ] User stats display
 - [ ] Win/loss history available
+- [x] Stats calculated correctly - verified via API
+
+### Known Limitations (Development Mode)
+- In-memory session storage may not persist between API routes due to Next.js hot reloading
+- Tests use x-user-id header (legacy fallback) for reliability in dev mode
+- Sessions reset on server restart (expected for demo, production would use Redis/PostgreSQL)
 
 ---
 

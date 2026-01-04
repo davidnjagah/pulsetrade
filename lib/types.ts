@@ -181,18 +181,89 @@ export interface LeaderboardEntry {
   userId: string;
   username: string;
   avatarUrl: string | null;
+  walletAddress: string;
   wins: number;
   losses: number;
   profit: number;
   winRate: number;
+  totalBets: number;
+  streak: number; // Current win/loss streak (positive = wins, negative = losses)
 }
 
 export interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
   totalUsers: number;
+  period: LeaderboardPeriod;
+  generatedAt: string;
+  userRank?: LeaderboardEntry | null; // Requesting user's rank if authenticated
 }
 
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'alltime';
+
+// ============================================
+// User Profile Types
+// ============================================
+
+export interface UserProfile {
+  id: string;
+  walletAddress: string;
+  username: string | null;
+  avatarUrl: string | null;
+  balance: number;
+  createdAt: string;
+  isDemo: boolean;
+  rank?: number;
+  stats: UserStats;
+}
+
+export interface UserStats {
+  totalBets: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalWagered: number;
+  totalPayout: number;
+  profit: number;
+  biggestWin: number;
+  biggestLoss: number;
+  currentStreak: number; // Positive = win streak, negative = loss streak
+  longestWinStreak: number;
+  longestLossStreak: number;
+  averageBetSize: number;
+  averageMultiplier: number;
+  profitByPeriod: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+  };
+}
+
+export interface BetHistoryItem {
+  id: string;
+  amount: number;
+  targetPrice: number;
+  priceAtPlacement: number;
+  multiplier: number;
+  status: BetStatus;
+  placedAt: string;
+  resolvedAt: string | null;
+  payout: number | null;
+  profit: number; // payout - amount (negative if lost)
+  targetTime: string;
+}
+
+export interface BetHistoryResponse {
+  history: BetHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface UserProfileResponse {
+  profile: UserProfile;
+  recentBets: BetHistoryItem[];
+}
 
 // ============================================
 // User Balance Types

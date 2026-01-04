@@ -20,6 +20,7 @@ import {
 import { calculateMultiplier, calculatePayout, resolveBet as resolveMultiplier } from './multiplierCalculator';
 import { validateBetRequest, BetValidationContext } from './betValidator';
 import { addBetNotification } from './chatService';
+import { updateUserLeaderboardStats } from './leaderboardService';
 
 // ============================================
 // Types
@@ -360,6 +361,24 @@ async function resolveBetInternal(betId: string, actualPrice: number): Promise<B
     });
   } catch (error) {
     console.error('[BetService] Failed to emit resolution notification:', error);
+  }
+
+  // Update leaderboard stats
+  try {
+    // Get user info for leaderboard (use default values if not found)
+    const username = `User_${bet.userId.slice(0, 6)}`;
+    const walletAddress = bet.userId;
+    const avatarUrl = null;
+
+    updateUserLeaderboardStats(
+      bet.userId,
+      username,
+      walletAddress,
+      avatarUrl,
+      bet
+    );
+  } catch (error) {
+    console.error('[BetService] Failed to update leaderboard stats:', error);
   }
 
   // Notify callbacks

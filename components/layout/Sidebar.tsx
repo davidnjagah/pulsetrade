@@ -1,20 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   TrendingUp,
   Trophy,
   User,
-  MessageCircle,
   ChevronLeft,
   ChevronRight,
-  BarChart3
+  BarChart3,
+  LucideIcon
 } from "lucide-react";
 
 interface NavItem {
   id: string;
   label: string;
-  icon: React.ReactNode;
+  icon: LucideIcon;
   href: string;
 }
 
@@ -22,25 +24,25 @@ const navItems: NavItem[] = [
   {
     id: "trade",
     label: "Trade",
-    icon: <TrendingUp className="w-5 h-5" />,
+    icon: TrendingUp,
     href: "/",
   },
   {
     id: "leaderboard",
     label: "Leaderboard",
-    icon: <Trophy className="w-5 h-5" />,
+    icon: Trophy,
     href: "/leaderboard",
   },
   {
     id: "profile",
     label: "Profile",
-    icon: <User className="w-5 h-5" />,
+    icon: User,
     href: "/profile",
   },
   {
     id: "stats",
     label: "Stats",
-    icon: <BarChart3 className="w-5 h-5" />,
+    icon: BarChart3,
     href: "/stats",
   },
 ];
@@ -50,8 +52,26 @@ interface SidebarProps {
   onItemClick?: (id: string) => void;
 }
 
-export default function Sidebar({ activeItem = "trade", onItemClick }: SidebarProps) {
+export default function Sidebar({ activeItem, onItemClick }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const pathname = usePathname();
+
+  // Determine active item from pathname or prop
+  const getActiveItem = () => {
+    if (activeItem) return activeItem;
+
+    // Match pathname to nav item
+    const matchedItem = navItems.find((item) => {
+      if (item.href === "/") {
+        return pathname === "/";
+      }
+      return pathname.startsWith(item.href);
+    });
+
+    return matchedItem?.id || "trade";
+  };
+
+  const currentActiveItem = getActiveItem();
 
   return (
     <aside
@@ -63,10 +83,13 @@ export default function Sidebar({ activeItem = "trade", onItemClick }: SidebarPr
       <nav className="flex-1 py-4 px-2">
         <ul className="space-y-2">
           {navItems.map((item) => {
-            const isActive = activeItem === item.id;
+            const isActive = currentActiveItem === item.id;
+            const IconComponent = item.icon;
+
             return (
               <li key={item.id}>
-                <button
+                <Link
+                  href={item.href}
                   onClick={() => onItemClick?.(item.id)}
                   className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 tap-target ${
                     isActive
@@ -79,14 +102,14 @@ export default function Sidebar({ activeItem = "trade", onItemClick }: SidebarPr
                       isActive ? "text-pulse-pink" : ""
                     } transition-colors`}
                   >
-                    {item.icon}
+                    <IconComponent className="w-5 h-5" />
                   </span>
                   {isExpanded && (
                     <span className="text-sm font-medium whitespace-nowrap animate-fade-in">
                       {item.label}
                     </span>
                   )}
-                </button>
+                </Link>
               </li>
             );
           })}
