@@ -123,17 +123,49 @@ async function fetchHeliusPrice(): Promise<PriceCache | null> {
 }
 
 // ============================================
-// Mock Price (last fallback)
+// Mock Price Generator (for simulation mode)
 // ============================================
 
+// Persistent mock state for smooth price transitions
+let mockBasePrice = 175;
+let mockMomentum = 0;
+let mockTrend = 0;
+
 function getMockPrice(): PriceCache {
-  // Generate a realistic mock price around $200
-  const basePrice = 200;
-  const variation = (Math.random() - 0.5) * 10; // +/- $5
+  // Generate visible price movements (0.1% to 1% swings)
+  const volatility = 0.005; // 0.5% base volatility
+
+  // Random walk component
+  const randomChange = (Math.random() - 0.5) * 2 * volatility * mockBasePrice;
+
+  // Momentum for smooth trends
+  mockMomentum = mockMomentum * 0.7 + randomChange * 0.3;
+
+  // Occasional trend shifts
+  if (Math.random() < 0.08) {
+    mockTrend = (Math.random() - 0.5) * 0.002 * mockBasePrice;
+  }
+
+  // Occasional larger moves (5% chance)
+  let bigMove = 0;
+  if (Math.random() < 0.05) {
+    bigMove = (Math.random() - 0.5) * 0.015 * mockBasePrice;
+  }
+
+  // Apply all components
+  mockBasePrice += mockMomentum + mockTrend + bigMove;
+
+  // Mean reversion toward $175 center
+  const centerPrice = 175;
+  const reversion = (centerPrice - mockBasePrice) * 0.001;
+  mockBasePrice += reversion;
+
+  // Keep price in $150-$200 range for grid visibility
+  mockBasePrice = Math.max(150, Math.min(200, mockBasePrice));
 
   return {
-    price: Number((basePrice + variation).toFixed(2)),
-    change24h: (Math.random() - 0.5) * 10, // +/- 5%
+    price: Number(mockBasePrice.toFixed(4)),
+    change24h: (Math.random() - 0.5) * 6, // +/- 3% for visual variety
     timestamp: Date.now(),
   };
 }

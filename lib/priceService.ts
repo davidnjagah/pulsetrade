@@ -151,39 +151,60 @@ class MockPriceGenerator {
   private basePrice: number;
   private volatility: number;
   private trend: number;
+  private momentum: number;
   private intervalId: NodeJS.Timeout | null = null;
 
-  constructor(basePrice: number = 200, volatility: number = 0.001) {
+  // Enhanced settings for visible price movements
+  // Volatility: 0.003 to 0.008 creates 0.3% to 0.8% swings per tick
+  constructor(basePrice: number = 175, volatility: number = 0.005) {
     this.basePrice = basePrice;
     this.volatility = volatility;
     this.trend = 0;
+    this.momentum = 0;
   }
 
   /**
-   * Generate a realistic mock price update
+   * Generate a realistic mock price update with visible movements
+   * Target: 0.1% to 1% swings that are clearly visible on the grid
    */
   generatePrice(): number {
-    // Random walk with mean reversion
+    // Random walk component (main price movement)
     const randomChange = (Math.random() - 0.5) * 2 * this.volatility * this.basePrice;
 
-    // Add trend component (changes occasionally)
-    if (Math.random() < 0.05) {
-      this.trend = (Math.random() - 0.5) * 0.0002 * this.basePrice;
+    // Momentum component (creates smooth trends instead of pure noise)
+    this.momentum = this.momentum * 0.7 + randomChange * 0.3;
+
+    // Trend component (changes direction occasionally for variety)
+    if (Math.random() < 0.08) {
+      // 8% chance to shift trend
+      this.trend = (Math.random() - 0.5) * 0.002 * this.basePrice;
     }
 
-    // Apply change with momentum
-    this.basePrice += randomChange + this.trend;
+    // Occasional larger moves (5% chance of 0.5-1% jump)
+    let bigMove = 0;
+    if (Math.random() < 0.05) {
+      bigMove = (Math.random() - 0.5) * 0.015 * this.basePrice;
+    }
 
-    // Keep price reasonable (SOL-like range)
-    this.basePrice = Math.max(50, Math.min(500, this.basePrice));
+    // Apply all components
+    this.basePrice += this.momentum + this.trend + bigMove;
+
+    // Mean reversion: gently pull back toward $175 center
+    const centerPrice = 175;
+    const reversion = (centerPrice - this.basePrice) * 0.001;
+    this.basePrice += reversion;
+
+    // Keep price in visible range ($150-$200 for good grid visibility)
+    this.basePrice = Math.max(150, Math.min(200, this.basePrice));
 
     return Number(this.basePrice.toFixed(4));
   }
 
   /**
    * Start generating prices at interval
+   * Default: 750ms for smooth visible updates (between 500ms-1000ms requirement)
    */
-  start(callback: (price: number) => void, intervalMs: number = 1000): void {
+  start(callback: (price: number) => void, intervalMs: number = 750): void {
     this.stop();
     this.intervalId = setInterval(() => {
       callback(this.generatePrice());
@@ -420,21 +441,27 @@ export class PriceService {
   }
 
   /**
-   * Start mock price feed (for development)
+   * Start mock price feed (for development/simulation)
+   * Uses enhanced volatility for visible price movements on the grid
    */
   private startMockFeed(): void {
-    this.mockGenerator = new MockPriceGenerator(200, 0.002);
+    // Initialize with base price $175, volatility 0.005 (0.5% swings)
+    // Price will fluctuate between $150-$200 range
+    this.mockGenerator = new MockPriceGenerator(175, 0.005);
 
     // Generate initial price
     const initialPrice = this.mockGenerator.generatePrice();
     this.handlePriceUpdate(initialPrice);
 
-    // Start continuous updates
+    // Start continuous updates at 750ms intervals for smooth, visible movement
+    // This is faster than real price feed for better simulation experience
+    const mockUpdateInterval = 750; // 750ms for responsive mock updates
     this.mockGenerator.start((price) => {
       this.handlePriceUpdate(price);
-    }, PRICE_FEED_CONFIG.UPDATE_INTERVAL_MS);
+    }, mockUpdateInterval);
 
     this.updateConnectionState(true);
+    console.log('[PriceService] Mock price feed started with enhanced volatility');
   }
 
   /**
