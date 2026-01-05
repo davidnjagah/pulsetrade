@@ -2,8 +2,8 @@
  * PulseTrade Price Feed Service
  * Handles real-time price data from multiple oracles
  *
- * Primary: Helius (wss://atlas-mainnet.helius-rpc.com)
- * Secondary: Pyth Network
+ * Primary: CoinGecko API via /api/price/sol
+ * Secondary: Helius (if API key provided)
  * Fallback: Mock data for development
  */
 
@@ -18,7 +18,7 @@ import {
 // Types
 // ============================================
 
-export type PriceSource = 'helius' | 'pyth' | 'mock';
+export type PriceSource = 'coingecko' | 'helius' | 'mock';
 
 export interface PriceServiceConfig {
   source: PriceSource;
@@ -35,6 +35,16 @@ export interface PriceServiceState {
   currentPrice: number | null;
   lastUpdate: number | null;
   source: PriceSource;
+  change24h: number | null;
+}
+
+interface APIPrice {
+  price: number;
+  change24h: number;
+  timestamp: number;
+  stale?: boolean;
+  mock?: boolean;
+  error?: boolean;
 }
 
 // ============================================
@@ -189,6 +199,119 @@ class MockPriceGenerator {
       this.intervalId = null;
     }
   }
+
+  /**
+   * Set base price (used when transitioning from real prices)
+   */
+  setBasePrice(price: number): void {
+    this.basePrice = price;
+  }
+}
+
+// ============================================
+// Real Price Fetcher
+// ============================================
+
+class RealPriceFetcher {
+  private intervalId: NodeJS.Timeout | null = null;
+  private lastRealPrice: number | null = null;
+  private lastFetchTime: number = 0;
+  private fetchIntervalMs: number = 5000; // Fetch from API every 5 seconds
+  private updateIntervalMs: number = 1500; // Update UI every 1.5 seconds
+
+  /**
+   * Fetch price from the API endpoint
+   */
+  async fetchPrice(): Promise<APIPrice | null> {
+    try {
+      const response = await fetch('/api/price/sol', {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data: APIPrice = await response.json();
+      this.lastRealPrice = data.price;
+      this.lastFetchTime = Date.now();
+
+      return data;
+    } catch (error) {
+      console.error('[PriceService] Failed to fetch price:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add small random variation to price for real-time feel
+   * Variation: 0.01% to 0.05% of price
+   */
+  private addVariation(price: number): number {
+    const variationPercent = 0.0001 + Math.random() * 0.0004; // 0.01% to 0.05%
+    const direction = Math.random() > 0.5 ? 1 : -1;
+    const variation = price * variationPercent * direction;
+
+    return Number((price + variation).toFixed(4));
+  }
+
+  /**
+   * Start fetching prices at interval
+   */
+  start(
+    callback: (price: number, change24h?: number) => void,
+    onError?: (error: Error) => void
+  ): void {
+    this.stop();
+
+    // Initial fetch
+    this.fetchPrice().then((data) => {
+      if (data) {
+        callback(data.price, data.change24h);
+      }
+    });
+
+    // Set up interval for updates
+    this.intervalId = setInterval(async () => {
+      const now = Date.now();
+
+      // Fetch from API every 5 seconds
+      if (now - this.lastFetchTime >= this.fetchIntervalMs) {
+        const data = await this.fetchPrice();
+
+        if (data) {
+          callback(data.price, data.change24h);
+        } else if (this.lastRealPrice) {
+          // If fetch failed but we have a previous price, add variation
+          const variedPrice = this.addVariation(this.lastRealPrice);
+          callback(variedPrice);
+        } else {
+          onError?.(new Error('Failed to fetch price'));
+        }
+      } else if (this.lastRealPrice) {
+        // Between API fetches, add small variations for real-time feel
+        const variedPrice = this.addVariation(this.lastRealPrice);
+        callback(variedPrice);
+      }
+    }, this.updateIntervalMs);
+  }
+
+  /**
+   * Stop fetching prices
+   */
+  stop(): void {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  /**
+   * Get last known real price
+   */
+  getLastPrice(): number | null {
+    return this.lastRealPrice;
+  }
 }
 
 // ============================================
@@ -200,6 +323,7 @@ export class PriceService {
   private state: PriceServiceState;
   private historyBuffer: PriceHistoryBuffer;
   private mockGenerator: MockPriceGenerator | null = null;
+  private realFetcher: RealPriceFetcher | null = null;
   private ws: WebSocket | null = null;
   private reconnectAttempts: number = 0;
   private reconnectTimeout: NodeJS.Timeout | null = null;
@@ -211,6 +335,7 @@ export class PriceService {
       currentPrice: null,
       lastUpdate: null,
       source: config.source,
+      change24h: null,
     };
     this.historyBuffer = new PriceHistoryBuffer();
   }
@@ -219,12 +344,23 @@ export class PriceService {
    * Start the price feed service
    */
   async start(): Promise<void> {
+    // Check if mock prices are enabled via environment
+    const useMockPrices = typeof window !== 'undefined'
+      ? process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true'
+      : false;
+
+    if (useMockPrices || this.config.source === 'mock') {
+      this.startMockFeed();
+      return;
+    }
+
+    // Use real price feed
     switch (this.config.source) {
+      case 'coingecko':
+        await this.startCoinGeckoFeed();
+        break;
       case 'helius':
         await this.startHeliusFeed();
-        break;
-      case 'pyth':
-        await this.startPythFeed();
         break;
       case 'mock':
       default:
@@ -249,7 +385,38 @@ export class PriceService {
       this.mockGenerator = null;
     }
 
+    if (this.realFetcher) {
+      this.realFetcher.stop();
+      this.realFetcher = null;
+    }
+
     this.updateConnectionState(false);
+  }
+
+  /**
+   * Start CoinGecko price feed (via API route)
+   */
+  private async startCoinGeckoFeed(): Promise<void> {
+    this.realFetcher = new RealPriceFetcher();
+
+    this.realFetcher.start(
+      (price, change24h) => {
+        this.handlePriceUpdate(price, change24h);
+      },
+      (error) => {
+        console.error('[PriceService] CoinGecko feed error:', error);
+        this.handleError(error);
+
+        // Fall back to mock if real feed fails consistently
+        if (this.reconnectAttempts >= PRICE_FEED_CONFIG.MAX_RECONNECT_ATTEMPTS) {
+          console.log('[PriceService] Falling back to mock feed');
+          this.config.source = 'mock';
+          this.startMockFeed();
+        }
+      }
+    );
+
+    this.updateConnectionState(true);
   }
 
   /**
@@ -277,9 +444,9 @@ export class PriceService {
     const apiKey = this.config.heliusApiKey || process.env.HELIUS_API_KEY;
 
     if (!apiKey) {
-      console.warn('Helius API key not found, falling back to mock feed');
-      this.config.source = 'mock';
-      return this.startMockFeed();
+      console.warn('Helius API key not found, falling back to CoinGecko');
+      this.config.source = 'coingecko';
+      return this.startCoinGeckoFeed();
     }
 
     const wsUrl = `wss://atlas-mainnet.helius-rpc.com/?api-key=${apiKey}`;
@@ -288,24 +455,6 @@ export class PriceService {
       await this.connectWebSocket(wsUrl, this.handleHeliusMessage.bind(this));
     } catch (error) {
       console.error('Failed to connect to Helius:', error);
-      this.handleError(error as Error);
-      this.scheduleReconnect();
-    }
-  }
-
-  /**
-   * Start Pyth Network feed
-   */
-  private async startPythFeed(): Promise<void> {
-    const pythEndpoint =
-      this.config.pythEndpoint ||
-      process.env.PYTH_ENDPOINT ||
-      'wss://hermes.pyth.network/ws';
-
-    try {
-      await this.connectWebSocket(pythEndpoint, this.handlePythMessage.bind(this));
-    } catch (error) {
-      console.error('Failed to connect to Pyth:', error);
       this.handleError(error as Error);
       this.scheduleReconnect();
     }
@@ -376,36 +525,17 @@ export class PriceService {
   }
 
   /**
-   * Handle Pyth WebSocket messages
-   */
-  private handlePythMessage(data: unknown): void {
-    // Pyth Network price format
-    const message = data as {
-      type?: string;
-      price_feed?: {
-        price?: {
-          price: string;
-          expo: number;
-        };
-      };
-    };
-
-    if (message.type === 'price_update' && message.price_feed?.price) {
-      const { price, expo } = message.price_feed.price;
-      const actualPrice = Number(price) * Math.pow(10, expo);
-      this.handlePriceUpdate(actualPrice);
-    }
-  }
-
-  /**
    * Handle a new price update
    */
-  private handlePriceUpdate(price: number): void {
+  private handlePriceUpdate(price: number, change24h?: number): void {
     const timestamp = Date.now();
 
     // Update state
     this.state.currentPrice = price;
     this.state.lastUpdate = timestamp;
+    if (change24h !== undefined) {
+      this.state.change24h = change24h;
+    }
 
     // Add to history buffer
     this.historyBuffer.add(price, timestamp);
@@ -485,6 +615,13 @@ export class PriceService {
   }
 
   /**
+   * Get 24h change percentage
+   */
+  get24hChange(): number | null {
+    return this.state.change24h;
+  }
+
+  /**
    * Get price history
    */
   getPriceHistory(): PriceHistoryPoint[] {
@@ -531,8 +668,15 @@ let priceServiceInstance: PriceService | null = null;
  */
 export function getPriceService(config?: Partial<PriceServiceConfig>): PriceService {
   if (!priceServiceInstance && config?.onPriceUpdate) {
+    // Determine default source based on environment
+    const useMockPrices = typeof window !== 'undefined'
+      ? process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true'
+      : false;
+
+    const defaultSource: PriceSource = useMockPrices ? 'mock' : 'coingecko';
+
     priceServiceInstance = new PriceService({
-      source: config.source || 'mock',
+      source: config.source || defaultSource,
       asset: config.asset || 'SOL',
       onPriceUpdate: config.onPriceUpdate,
       onError: config.onError,
@@ -563,4 +707,4 @@ export function resetPriceService(): void {
 // Export Types
 // ============================================
 
-export { PriceHistoryBuffer, MockPriceGenerator };
+export { PriceHistoryBuffer, MockPriceGenerator, RealPriceFetcher };

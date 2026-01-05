@@ -17,7 +17,7 @@ import { Session, SessionValidation, WalletType } from './types';
 // ============================================
 
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const DEFAULT_BALANCE = 10000; // $10,000 for new users
+const DEFAULT_BALANCE = 1000; // $1,000 for new users
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // Cleanup every hour
 
 // ============================================
