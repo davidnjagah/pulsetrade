@@ -165,7 +165,7 @@ export function useAuth() {
       }
     } else if (!connected && !connecting && state.walletType !== "demo") {
       // Wallet disconnected - clear non-demo session
-      if (state.isConnected && state.walletType !== "demo") {
+      if (state.isConnected) {
         localStorage.removeItem(LOCAL_STORAGE_KEY);
         setState({
           isConnected: false,

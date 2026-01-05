@@ -362,8 +362,8 @@ export class PriceService {
       case 'helius':
         await this.startHeliusFeed();
         break;
-      case 'mock':
       default:
+        // Fallback to mock feed for any other source
         this.startMockFeed();
         break;
     }
