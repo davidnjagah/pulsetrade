@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 // Wallet types supported
-export type WalletType = "phantom" | "solflare" | "demo";
+export type WalletType = "phantom" | "solflare" | "backpack" | "demo" | "wallet-adapter";
 
 // User interface
 export interface User {
@@ -69,6 +70,8 @@ export function truncateAddress(address: string, chars: number = 4): string {
 
 // Main useAuth hook
 export function useAuth() {
+  const { publicKey, connected, connecting, wallet, disconnect: walletDisconnect } = useWallet();
+
   const [state, setState] = useState<AuthState>({
     isConnected: false,
     isLoading: true,
@@ -79,25 +82,28 @@ export function useAuth() {
     error: null,
   });
 
-  // Load auth state from localStorage on mount
+  // Load auth state from localStorage on mount (for demo mode persistence)
   useEffect(() => {
     const loadAuthState = () => {
       try {
         const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
-          setState({
-            isConnected: true,
-            isLoading: false,
-            isConnecting: false,
-            user: parsed.user,
-            walletAddress: parsed.walletAddress,
-            walletType: parsed.walletType,
-            error: null,
-          });
-        } else {
-          setState((prev) => ({ ...prev, isLoading: false }));
+          // Only restore demo sessions from localStorage
+          if (parsed.walletType === "demo") {
+            setState({
+              isConnected: true,
+              isLoading: false,
+              isConnecting: false,
+              user: parsed.user,
+              walletAddress: parsed.walletAddress,
+              walletType: parsed.walletType,
+              error: null,
+            });
+            return;
+          }
         }
+        setState((prev) => ({ ...prev, isLoading: false }));
       } catch (error) {
         console.error("Failed to load auth state:", error);
         setState((prev) => ({ ...prev, isLoading: false }));
@@ -106,6 +112,80 @@ export function useAuth() {
 
     loadAuthState();
   }, []);
+
+  // Sync with wallet adapter state
+  useEffect(() => {
+    if (connected && publicKey) {
+      const walletAddress = publicKey.toBase58();
+      const walletName = wallet?.adapter?.name?.toLowerCase() || "wallet-adapter";
+
+      // Determine wallet type from adapter name
+      let walletType: WalletType = "wallet-adapter";
+      if (walletName.includes("phantom")) {
+        walletType = "phantom";
+      } else if (walletName.includes("solflare")) {
+        walletType = "solflare";
+      } else if (walletName.includes("backpack")) {
+        walletType = "backpack";
+      }
+
+      // Create user object
+      const user: User = {
+        id: `user_${walletAddress.slice(0, 8)}`,
+        walletAddress,
+        walletType,
+        displayName: generateDisplayName(walletAddress, walletType),
+        avatarColor: generateAvatarColor(walletAddress),
+        createdAt: Date.now(),
+        isDemo: false,
+      };
+
+      setState({
+        isConnected: true,
+        isLoading: false,
+        isConnecting: false,
+        user,
+        walletAddress,
+        walletType,
+        error: null,
+      });
+
+      // Save session to localStorage
+      try {
+        localStorage.setItem(
+          LOCAL_STORAGE_KEY,
+          JSON.stringify({
+            user,
+            walletAddress,
+            walletType,
+          })
+        );
+      } catch (error) {
+        console.error("Failed to save auth state:", error);
+      }
+    } else if (!connected && !connecting && state.walletType !== "demo") {
+      // Wallet disconnected - clear non-demo session
+      if (state.isConnected && state.walletType !== "demo") {
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        setState({
+          isConnected: false,
+          isLoading: false,
+          isConnecting: false,
+          user: null,
+          walletAddress: null,
+          walletType: null,
+          error: null,
+        });
+      }
+    }
+  }, [connected, publicKey, connecting, wallet, state.walletType, state.isConnected]);
+
+  // Update connecting state from wallet adapter
+  useEffect(() => {
+    if (connecting) {
+      setState((prev) => ({ ...prev, isConnecting: true }));
+    }
+  }, [connecting]);
 
   // Save auth state to localStorage
   const saveAuthState = useCallback((user: User, walletType: WalletType) => {
@@ -123,55 +203,26 @@ export function useAuth() {
     }
   }, []);
 
-  // Connect to a wallet
+  // Connect to a wallet (demo mode only - real wallets use wallet adapter modal)
   const connect = useCallback(
     async (walletType: WalletType): Promise<boolean> => {
+      // Only handle demo mode - real wallets are connected via wallet adapter modal
+      if (walletType !== "demo") {
+        console.warn("Use wallet adapter modal for real wallet connections");
+        return false;
+      }
+
       setState((prev) => ({ ...prev, isConnecting: true, error: null }));
 
       try {
-        let walletAddress: string;
+        const walletAddress = DEMO_WALLET_ADDRESS;
 
-        if (walletType === "demo") {
-          // Demo mode - use mock wallet
-          walletAddress = DEMO_WALLET_ADDRESS;
-
-          // Initialize demo balance if not exists
-          if (!localStorage.getItem(LOCAL_STORAGE_BALANCE_KEY)) {
-            localStorage.setItem(
-              LOCAL_STORAGE_BALANCE_KEY,
-              DEMO_INITIAL_BALANCE.toString()
-            );
-          }
-        } else if (walletType === "phantom") {
-          // Check if Phantom is installed
-          const phantom = (window as any)?.solana;
-          if (!phantom?.isPhantom) {
-            throw new Error(
-              "Phantom wallet not found. Please install it from phantom.app"
-            );
-          }
-
-          // Request connection
-          const response = await phantom.connect();
-          walletAddress = response.publicKey.toString();
-        } else if (walletType === "solflare") {
-          // Check if Solflare is installed
-          const solflare = (window as any)?.solflare;
-          if (!solflare?.isSolflare) {
-            throw new Error(
-              "Solflare wallet not found. Please install it from solflare.com"
-            );
-          }
-
-          // Request connection
-          await solflare.connect();
-          walletAddress = solflare.publicKey?.toString();
-
-          if (!walletAddress) {
-            throw new Error("Failed to get wallet address from Solflare");
-          }
-        } else {
-          throw new Error("Unsupported wallet type");
+        // Initialize demo balance if not exists
+        if (!localStorage.getItem(LOCAL_STORAGE_BALANCE_KEY)) {
+          localStorage.setItem(
+            LOCAL_STORAGE_BALANCE_KEY,
+            DEMO_INITIAL_BALANCE.toString()
+          );
         }
 
         // Create user object
@@ -182,7 +233,7 @@ export function useAuth() {
           displayName: generateDisplayName(walletAddress, walletType),
           avatarColor: generateAvatarColor(walletAddress),
           createdAt: Date.now(),
-          isDemo: walletType === "demo",
+          isDemo: true,
         };
 
         // Save and update state
@@ -215,17 +266,9 @@ export function useAuth() {
   // Disconnect wallet
   const disconnect = useCallback(async () => {
     try {
-      // Disconnect from actual wallet if connected
-      if (state.walletType === "phantom") {
-        const phantom = (window as any)?.solana;
-        if (phantom?.isPhantom) {
-          await phantom.disconnect();
-        }
-      } else if (state.walletType === "solflare") {
-        const solflare = (window as any)?.solflare;
-        if (solflare?.isSolflare) {
-          await solflare.disconnect();
-        }
+      // Disconnect from wallet adapter if connected
+      if (connected) {
+        await walletDisconnect();
       }
     } catch (error) {
       console.error("Error disconnecting wallet:", error);
@@ -245,7 +288,7 @@ export function useAuth() {
       walletType: null,
       error: null,
     });
-  }, [state.walletType]);
+  }, [connected, walletDisconnect]);
 
   // Clear error
   const clearError = useCallback(() => {

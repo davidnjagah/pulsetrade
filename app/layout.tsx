@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { WalletProvider } from "@/context/WalletProvider";
 import { AuthProvider } from "@/context/AuthContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { SettingsProvider } from "@/context/SettingsContext";
@@ -46,15 +47,17 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className={`${inter.className} bg-pulse-bg text-pulse-text antialiased`}>
-        <SettingsProvider>
-          <AuthProvider>
-            <ChatProvider>
-              <PageTransition>
-                {children}
-              </PageTransition>
-            </ChatProvider>
-          </AuthProvider>
-        </SettingsProvider>
+        <WalletProvider>
+          <SettingsProvider>
+            <AuthProvider>
+              <ChatProvider>
+                <PageTransition>
+                  {children}
+                </PageTransition>
+              </ChatProvider>
+            </AuthProvider>
+          </SettingsProvider>
+        </WalletProvider>
       </body>
     </html>
   );
